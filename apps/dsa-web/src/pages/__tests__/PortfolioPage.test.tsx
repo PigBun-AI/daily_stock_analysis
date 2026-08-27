@@ -363,6 +363,87 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getByRole('button', { name: '刷新汇率' })).toBeInTheDocument();
   });
 
+  it('renders portfolio risk flags and exposure dashboard from snapshot and risk data', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      positions: [
+        makePosition({
+          symbol: '600519',
+          market: 'cn',
+          currency: 'CNY',
+          valuationCurrency: 'CNY',
+          marketValueBase: 6000,
+        }),
+        makePosition({
+          symbol: 'HK00700',
+          market: 'hk',
+          currency: 'HKD',
+          valuationCurrency: 'HKD',
+          marketValueBase: 4000,
+          priceStale: true,
+        }),
+      ],
+    }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      concentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 60,
+        alert: true,
+        topPositions: [{ symbol: '600519', marketValueBase: 6000, weightPct: 60, isAlert: true }],
+      },
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 70,
+        alert: true,
+        topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: true }],
+        coverage: {},
+        errors: [],
+      },
+      drawdown: {
+        seriesPoints: 10,
+        maxDrawdownPct: 18.5,
+        currentDrawdownPct: 12.5,
+        alert: true,
+        fxStale: false,
+      },
+      stopLoss: {
+        nearAlert: true,
+        triggeredCount: 1,
+        nearCount: 2,
+        items: [],
+      },
+      decisionSignalRisk: {
+        available: true,
+        total: 1,
+        actions: { sell: 0, reduce: 1, alert: 0 },
+        items: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+
+    const dashboard = screen.getByText('风险与暴露看板').closest('section');
+    expect(dashboard).not.toBeNull();
+    const dashboardScope = within(dashboard as HTMLElement);
+
+    expect(dashboardScope.getByText('风险旗标')).toBeInTheDocument();
+    expect(dashboardScope.getAllByText('需处理').length).toBeGreaterThanOrEqual(5);
+    expect(dashboardScope.getByText('个股集中')).toBeInTheDocument();
+    expect(dashboardScope.getByText('Top1: 600519')).toBeInTheDocument();
+    expect(dashboardScope.getByText('行业集中')).toBeInTheDocument();
+    expect(dashboardScope.getByText('Top1: 白酒')).toBeInTheDocument();
+    expect(dashboardScope.getByText('最大回撤: 18.50%')).toBeInTheDocument();
+    expect(dashboardScope.getByText('触发: 1 · 接近: 2')).toBeInTheDocument();
+    expect(dashboardScope.getByText('缺价: 0 · 过期价: 1')).toBeInTheDocument();
+    expect(dashboardScope.getAllByText('市场暴露').length).toBeGreaterThan(0);
+    expect(dashboardScope.getAllByText('币种暴露').length).toBeGreaterThan(0);
+    expect(dashboardScope.getByText('CN')).toBeInTheDocument();
+    expect(dashboardScope.getByText('HK')).toBeInTheDocument();
+    expect(dashboardScope.getByText('CNY')).toBeInTheDocument();
+    expect(dashboardScope.getByText('HKD')).toBeInTheDocument();
+  });
+
   it('shows aggregate partial valuation limitations near summary totals', async () => {
     getSnapshot.mockResolvedValueOnce(makeSnapshot({
       dataQuality: 'partial',
@@ -385,8 +466,8 @@ describe('PortfolioPage FX refresh', () => {
 
     expect(await screen.findByText('Portfolio management')).toBeInTheDocument();
     expect(screen.getByText('Drawdown monitor')).toBeInTheDocument();
-    expect(screen.getByText(/Max drawdown:/)).toBeInTheDocument();
-    expect(screen.getByText(/Current drawdown:/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Max drawdown:/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Current drawdown:/).length).toBeGreaterThan(0);
     expect(screen.getByText('Stop-loss proximity warning')).toBeInTheDocument();
     expect(screen.getByText('Scope')).toBeInTheDocument();
     expect(screen.getByText('AI risk signals')).toBeInTheDocument();

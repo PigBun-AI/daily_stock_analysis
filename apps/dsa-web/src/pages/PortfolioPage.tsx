@@ -1,11 +1,12 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Layers3, ShieldCheck } from 'lucide-react';
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Legend, Cell } from 'recharts';
 import { decisionSignalsApi } from '../api/decisionSignals';
 import { portfolioApi } from '../api/portfolio';
 import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
-import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert } from '../components/common';
+import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert, StatusDot } from '../components/common';
 import { PortfolioSignalSummary } from '../components/decision-signals/DecisionSignalDisplay';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { formatUiText } from '../i18n/uiText';
@@ -117,6 +118,75 @@ const PORTFOLIO_INPUT_CLASS =
 const PORTFOLIO_SELECT_CLASS = `${PORTFOLIO_INPUT_CLASS} appearance-none pr-10`;
 const PORTFOLIO_FILE_PICKER_CLASS =
   'input-surface input-focus-glow flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border bg-transparent px-4 text-sm transition-all focus:outline-none disabled:cursor-not-allowed disabled:opacity-60';
+const PORTFOLIO_RISK_DASHBOARD_TEXT = {
+  zh: {
+    title: '风险与暴露看板',
+    riskFlags: '风险旗标',
+    marketExposure: '市场暴露',
+    currencyExposure: '币种暴露',
+    noExposure: '暂无暴露数据',
+    concentration: '个股集中',
+    sector: '行业集中',
+    drawdown: '回撤',
+    stopLoss: '止损',
+    aiSignal: 'AI 信号',
+    priceQuality: '价格质量',
+    active: '需处理',
+    stable: '正常',
+    unavailable: '不可用',
+    maxDrawdown: '最大回撤',
+    topPosition: 'Top1',
+    topSector: 'Top1',
+    triggered: '触发',
+    near: '接近',
+    missingPrice: '缺价',
+    stalePrice: '过期价',
+    positions: '持仓',
+  },
+  en: {
+    title: 'Risk and exposure dashboard',
+    riskFlags: 'Risk flags',
+    marketExposure: 'Market exposure',
+    currencyExposure: 'Currency exposure',
+    noExposure: 'No exposure data',
+    concentration: 'Position concentration',
+    sector: 'Sector concentration',
+    drawdown: 'Drawdown',
+    stopLoss: 'Stop loss',
+    aiSignal: 'AI signals',
+    priceQuality: 'Price quality',
+    active: 'Needs action',
+    stable: 'Normal',
+    unavailable: 'Unavailable',
+    maxDrawdown: 'Max drawdown',
+    topPosition: 'Top1',
+    topSector: 'Top1',
+    triggered: 'Triggered',
+    near: 'Near',
+    missingPrice: 'Missing price',
+    stalePrice: 'Stale price',
+    positions: 'Positions',
+  },
+} as const;
+
+type RiskDashboardText = typeof PORTFOLIO_RISK_DASHBOARD_TEXT[PortfolioPageLanguage];
+type PortfolioRiskFlagTone = 'success' | 'warning' | 'danger' | 'neutral';
+
+type PortfolioRiskFlag = {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: PortfolioRiskFlagTone;
+};
+
+type PortfolioExposureRow = {
+  key: string;
+  label: string;
+  value: number;
+  weightPct: number;
+  count: number;
+};
 
 function getSignalTime(item: DecisionSignalItem): number {
   return parseDecisionSignalDate(item.createdAt)?.getTime()
@@ -132,6 +202,151 @@ function isNewerSignal(left: DecisionSignalItem | undefined, right: DecisionSign
 function formatPortfolioLimitation(limitation: string, language: PortfolioPageLanguage): string {
   return PORTFOLIO_LIMITATION_LABELS[limitation]?.[language] ?? limitation;
 }
+
+function buildExposureRows(
+  positions: FlatPosition[],
+  groupBy: 'market' | 'currency',
+  totalMarketValue: number,
+): PortfolioExposureRow[] {
+  const groups = new Map<string, { value: number; count: number }>();
+  for (const position of positions) {
+    const key = String(groupBy === 'market' ? position.market : position.currency || position.valuationCurrency || 'unknown').toUpperCase();
+    const current = groups.get(key) ?? { value: 0, count: 0 };
+    current.value += Number(position.marketValueBase || 0);
+    current.count += 1;
+    groups.set(key, current);
+  }
+  return Array.from(groups.entries())
+    .map(([key, item]) => ({
+      key,
+      label: key,
+      value: item.value,
+      weightPct: totalMarketValue > 0 ? (item.value / totalMarketValue) * 100 : 0,
+      count: item.count,
+    }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+}
+
+function buildPortfolioRiskFlags(
+  risk: PortfolioRiskResponse | null,
+  positions: FlatPosition[],
+  text: RiskDashboardText,
+): PortfolioRiskFlag[] {
+  const missingPriceCount = positions.filter((position) => !hasPositionPrice(position)).length;
+  const stalePriceCount = positions.filter((position) => position.priceStale).length;
+  const decisionSignalRisk = risk?.decisionSignalRisk;
+  const defensiveSignalCount = decisionSignalRisk?.total ?? 0;
+
+  return [
+    {
+      key: 'concentration',
+      label: text.concentration,
+      value: formatPct(risk?.concentration?.topWeightPct),
+      detail: `${text.topPosition}: ${risk?.concentration?.topPositions?.[0]?.symbol ?? '--'}`,
+      tone: risk?.concentration?.alert ? 'danger' : 'success',
+    },
+    {
+      key: 'sector',
+      label: text.sector,
+      value: formatPct(risk?.sectorConcentration?.topWeightPct),
+      detail: `${text.topSector}: ${risk?.sectorConcentration?.topSectors?.[0]?.sector ?? '--'}`,
+      tone: risk?.sectorConcentration?.alert ? 'danger' : 'success',
+    },
+    {
+      key: 'drawdown',
+      label: text.drawdown,
+      value: formatPct(risk?.drawdown?.currentDrawdownPct),
+      detail: `${text.maxDrawdown}: ${formatPct(risk?.drawdown?.maxDrawdownPct)}`,
+      tone: risk?.drawdown?.alert ? 'danger' : 'success',
+    },
+    {
+      key: 'stop-loss',
+      label: text.stopLoss,
+      value: String(risk?.stopLoss?.triggeredCount ?? 0),
+      detail: `${text.triggered}: ${risk?.stopLoss?.triggeredCount ?? 0} · ${text.near}: ${risk?.stopLoss?.nearCount ?? 0}`,
+      tone: risk?.stopLoss?.nearAlert ? 'danger' : 'success',
+    },
+    {
+      key: 'ai-signal',
+      label: text.aiSignal,
+      value: String(defensiveSignalCount),
+      detail: decisionSignalRisk?.available === false ? text.unavailable : `${text.active}: ${defensiveSignalCount}`,
+      tone: decisionSignalRisk?.available === false ? 'neutral' : defensiveSignalCount > 0 ? 'warning' : 'success',
+    },
+    {
+      key: 'price-quality',
+      label: text.priceQuality,
+      value: String(missingPriceCount + stalePriceCount),
+      detail: `${text.missingPrice}: ${missingPriceCount} · ${text.stalePrice}: ${stalePriceCount}`,
+      tone: missingPriceCount > 0 ? 'danger' : stalePriceCount > 0 ? 'warning' : 'success',
+    },
+  ];
+}
+
+function riskFlagBadgeVariant(tone: PortfolioRiskFlagTone): 'success' | 'warning' | 'danger' | 'default' {
+  if (tone === 'success') return 'success';
+  if (tone === 'warning') return 'warning';
+  if (tone === 'danger') return 'danger';
+  return 'default';
+}
+
+const PortfolioRiskFlagCard: React.FC<{
+  flag: PortfolioRiskFlag;
+  text: RiskDashboardText;
+}> = ({ flag, text }) => (
+  <div className="rounded-xl border border-border/70 bg-surface/55 px-3 py-2.5">
+    <div className="flex min-w-0 items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <StatusDot tone={flag.tone} className="h-2 w-2" />
+        <span className="truncate text-sm font-semibold text-foreground">{flag.label}</span>
+      </div>
+      <Badge variant={riskFlagBadgeVariant(flag.tone)}>
+        {flag.tone === 'success' ? text.stable : flag.tone === 'neutral' ? text.unavailable : text.active}
+      </Badge>
+    </div>
+    <div className="mt-2 text-lg font-semibold text-foreground">{flag.value}</div>
+    <div className="mt-1 truncate text-xs text-secondary">{flag.detail}</div>
+  </div>
+);
+
+const PortfolioExposureList: React.FC<{
+  title: string;
+  rows: PortfolioExposureRow[];
+  currency: string;
+  emptyLabel: string;
+  positionLabel: string;
+}> = ({ title, rows, currency, emptyLabel, positionLabel }) => (
+  <div className="rounded-xl border border-border/70 bg-surface/45 p-3">
+    <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+    {rows.length === 0 ? (
+      <div className="mt-3 rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-secondary">
+        {emptyLabel}
+      </div>
+    ) : (
+      <div className="mt-3 space-y-3">
+        {rows.slice(0, 5).map((row) => (
+          <div key={row.key}>
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="font-mono font-semibold text-foreground">{row.label}</span>
+              <span className="text-secondary">{formatPct(row.weightPct)}</span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-border/60">
+              <div
+                className="h-full rounded-full bg-cyan"
+                style={{ width: `${Math.min(100, Math.max(0, row.weightPct))}%` }}
+              />
+            </div>
+            <div className="mt-1 flex justify-between gap-2 text-[11px] text-muted-text">
+              <span>{formatMoney(row.value, currency)}</span>
+              <span>{positionLabel} {row.count}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+);
 
 const DECISION_SIGNAL_MARKETS = new Set<DecisionSignalMarket>(['cn', 'hk', 'us', 'jp', 'kr', 'tw']);
 type PortfolioAccountMarket = 'cn' | 'hk' | 'us' | 'jp' | 'kr' | 'tw';
@@ -182,6 +397,7 @@ async function loadPortfolioSignalLookup(lookup: PortfolioSignalLookup): Promise
 const PortfolioPage: React.FC = () => {
   const { language, t } = useUiLanguage();
   const text = PORTFOLIO_TEXT[language];
+  const riskDashboardText = PORTFOLIO_RISK_DASHBOARD_TEXT[language];
   const decisionActionLabels = useMemo(() => buildDecisionActionLabelMap(t), [t]);
 
   // Set page title
@@ -480,6 +696,19 @@ const PortfolioPage: React.FC = () => {
     rows.sort((a, b) => Number(b.marketValueBase || 0) - Number(a.marketValueBase || 0));
     return rows;
   }, [snapshot]);
+  const exposureTotal = snapshot?.totalMarketValue || positionRows.reduce((sum, row) => sum + Number(row.marketValueBase || 0), 0);
+  const marketExposureRows = useMemo(
+    () => buildExposureRows(positionRows, 'market', exposureTotal),
+    [exposureTotal, positionRows],
+  );
+  const currencyExposureRows = useMemo(
+    () => buildExposureRows(positionRows, 'currency', exposureTotal),
+    [exposureTotal, positionRows],
+  );
+  const portfolioRiskFlags = useMemo(
+    () => buildPortfolioRiskFlags(risk, positionRows, riskDashboardText),
+    [positionRows, risk, riskDashboardText],
+  );
 
   const snapshotMatchesAccountScope = useMemo(() => {
     if (!snapshot) return false;
@@ -1174,6 +1403,54 @@ const PortfolioPage: React.FC = () => {
               className="mt-3 rounded-xl px-3 py-2 text-xs shadow-none"
             />
           ) : null}
+        </Card>
+      </section>
+
+      <section>
+        <Card padding="md">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-cyan" />
+              <h2 className="text-sm font-semibold text-foreground">{riskDashboardText.title}</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-secondary">
+              <span>{riskDashboardText.positions}: {positionRows.length}</span>
+              <span>{text.totalMarketValue}: {formatMoney(exposureTotal, snapshot?.currency || 'CNY')}</span>
+            </div>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-secondary">
+                <AlertTriangle className="h-3.5 w-3.5 text-warning" />
+                {riskDashboardText.riskFlags}
+              </div>
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {portfolioRiskFlags.map((flag) => (
+                  <PortfolioRiskFlagCard key={flag.key} flag={flag} text={riskDashboardText} />
+                ))}
+              </div>
+            </div>
+            <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-1">
+              <div className="mb-[-0.25rem] hidden items-center gap-2 text-xs font-semibold text-secondary xl:flex">
+                <Layers3 className="h-3.5 w-3.5 text-cyan" />
+                {riskDashboardText.marketExposure} / {riskDashboardText.currencyExposure}
+              </div>
+              <PortfolioExposureList
+                title={riskDashboardText.marketExposure}
+                rows={marketExposureRows}
+                currency={snapshot?.currency || 'CNY'}
+                emptyLabel={riskDashboardText.noExposure}
+                positionLabel={riskDashboardText.positions}
+              />
+              <PortfolioExposureList
+                title={riskDashboardText.currencyExposure}
+                rows={currencyExposureRows}
+                currency={snapshot?.currency || 'CNY'}
+                emptyLabel={riskDashboardText.noExposure}
+                positionLabel={riskDashboardText.positions}
+              />
+            </div>
+          </div>
         </Card>
       </section>
 
