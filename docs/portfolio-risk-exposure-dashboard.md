@@ -17,16 +17,18 @@ Web 持仓页新增“风险与暴露看板”，放在组合总览指标和持�
 
 | 暴露维度 | 聚合方式 |
 | --- | --- |
-| 市场暴露 | 按 position.market 聚合 `marketValueBase` |
-| 币种暴露 | 按 position.currency / valuationCurrency 聚合 `marketValueBase` |
+| 市场暴露 | 先将 `position.marketValueBase` 从账户基准币折算到快照聚合币种，再按 `position.market` 聚合 |
+| 币种暴露 | 先将 `position.marketValueBase` 从账户基准币折算到快照聚合币种，再按 `position.currency` 聚合 |
 
-权重使用当前快照 `totalMarketValue` 作为分母；若快照缺失总市值，则回退为持仓行市值合计。
+权重使用当前快照 `totalMarketValue` 作为分母。
 
 ## 边界
 
 - 本次不新增后端字段，所有数据均来自既有 snapshot 和 risk 响应。
+- `/api/v1/portfolio/risk` 不可用或返回空风险块时，依赖服务端风险结果的旗标显示为“不可用”，不伪装成“正常”。
+- 暴露换算仅在当前作用域可稳定推断到账户基准币到快照币种的比例时展示；若处于“全部账户”且包含多种账户基准币、前端缺少逐账户已折算金额，则市场/币种暴露降级为空态，避免展示错误金额。
 - 原有持仓明细、集中度饼图、回撤、止损、AI 风险小卡继续保留。
-- 价格质量只基于 `priceAvailable`、`priceSource` 和 `priceStale`，不额外请求行情。
+- 价格质量只基于 `priceAvailable`、`priceSource` 和 `priceStale`，同一持仓只按“缺价或过期”计数一次，不额外请求行情。
 
 ## 后续扩展
 

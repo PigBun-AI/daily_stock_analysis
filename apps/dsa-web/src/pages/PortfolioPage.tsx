@@ -180,6 +180,14 @@ type PortfolioRiskFlag = {
   tone: PortfolioRiskFlagTone;
 };
 
+type PortfolioRiskAvailability = {
+  concentration: boolean;
+  sectorConcentration: boolean;
+  drawdown: boolean;
+  stopLoss: boolean;
+  decisionSignalRisk: boolean;
+};
+
 type PortfolioExposureRow = {
   key: string;
   label: string;
@@ -203,18 +211,85 @@ function formatPortfolioLimitation(limitation: string, language: PortfolioPageLa
   return PORTFOLIO_LIMITATION_LABELS[limitation]?.[language] ?? limitation;
 }
 
+function sumPositionMarketValue(positions: PortfolioPositionItem[]): number {
+  return positions.reduce((sum, position) => sum + Number(position.marketValueBase || 0), 0);
+}
+
+function hasRiskBlockField(value: unknown, field: string): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && field in value;
+}
+
+function hasBooleanField(value: unknown, field: string): value is Record<string, boolean> {
+  if (!hasRiskBlockField(value, field)) return false;
+  return typeof value[field] === 'boolean';
+}
+
+function hasNumberField(value: unknown, field: string): value is Record<string, number> {
+  if (!hasRiskBlockField(value, field)) return false;
+  return typeof value[field] === 'number' && Number.isFinite(value[field]);
+}
+
+function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): PortfolioRiskAvailability {
+  const concentration = risk?.concentration;
+  const sectorConcentration = risk?.sectorConcentration;
+  const drawdown = risk?.drawdown;
+  const stopLoss = risk?.stopLoss;
+  const decisionSignalRisk = risk?.decisionSignalRisk;
+
+  return {
+    concentration: hasNumberField(concentration, 'topWeightPct') && hasBooleanField(concentration, 'alert'),
+    sectorConcentration: hasNumberField(sectorConcentration, 'topWeightPct') && hasBooleanField(sectorConcentration, 'alert'),
+    drawdown: hasNumberField(drawdown, 'currentDrawdownPct')
+      && hasNumberField(drawdown, 'maxDrawdownPct')
+      && hasBooleanField(drawdown, 'alert'),
+    stopLoss: hasNumberField(stopLoss, 'triggeredCount')
+      && hasNumberField(stopLoss, 'nearCount')
+      && hasBooleanField(stopLoss, 'nearAlert'),
+    decisionSignalRisk: hasBooleanField(decisionSignalRisk, 'available')
+      && decisionSignalRisk.available === true
+      && hasNumberField(decisionSignalRisk, 'total'),
+  };
+}
+
 function buildExposureRows(
-  positions: FlatPosition[],
+  snapshot: PortfolioSnapshotResponse | null,
   groupBy: 'market' | 'currency',
-  totalMarketValue: number,
 ): PortfolioExposureRow[] {
+  if (!snapshot) return [];
+  const accounts = snapshot.accounts || [];
+  const totalMarketValue = Number(snapshot.totalMarketValue || 0);
+  const snapshotCurrency = String(snapshot.currency || 'CNY').toUpperCase();
+  const rawPortfolioValue = accounts.reduce(
+    (sum, account) => sum + sumPositionMarketValue(account.positions || []),
+    0,
+  );
+  const valuationCurrencies = new Set<string>();
+  for (const account of accounts) {
+    for (const position of account.positions || []) {
+      const rawValue = Number(position.marketValueBase || 0);
+      if (!Number.isFinite(rawValue) || rawValue === 0) continue;
+      const valuationCurrency = String(position.valuationCurrency || account.baseCurrency || snapshotCurrency).toUpperCase();
+      valuationCurrencies.add(valuationCurrency);
+    }
+  }
+  if (valuationCurrencies.size > 1) return [];
+  const [valuationCurrency = snapshotCurrency] = Array.from(valuationCurrencies);
+  const scale = valuationCurrency === snapshotCurrency
+    ? 1
+    : rawPortfolioValue > 0
+      ? totalMarketValue / rawPortfolioValue
+      : 0;
+  if (!Number.isFinite(scale)) return [];
+
   const groups = new Map<string, { value: number; count: number }>();
-  for (const position of positions) {
-    const key = String(groupBy === 'market' ? position.market : position.currency || position.valuationCurrency || 'unknown').toUpperCase();
-    const current = groups.get(key) ?? { value: 0, count: 0 };
-    current.value += Number(position.marketValueBase || 0);
-    current.count += 1;
-    groups.set(key, current);
+  for (const account of accounts) {
+    for (const position of account.positions || []) {
+      const key = String(groupBy === 'market' ? position.market : position.currency || position.valuationCurrency || 'unknown').toUpperCase();
+      const current = groups.get(key) ?? { value: 0, count: 0 };
+      current.value += Number(position.marketValueBase || 0) * scale;
+      current.count += 1;
+      groups.set(key, current);
+    }
   }
   return Array.from(groups.entries())
     .map(([key, item]) => ({
@@ -234,50 +309,56 @@ function buildPortfolioRiskFlags(
   text: RiskDashboardText,
 ): PortfolioRiskFlag[] {
   const missingPriceCount = positions.filter((position) => !hasPositionPrice(position)).length;
-  const stalePriceCount = positions.filter((position) => position.priceStale).length;
+  const stalePriceCount = positions.filter((position) => hasPositionPrice(position) && position.priceStale).length;
+  const priceIssueCount = missingPriceCount + stalePriceCount;
+  const concentration = risk?.concentration;
+  const sectorConcentration = risk?.sectorConcentration;
+  const drawdown = risk?.drawdown;
+  const stopLoss = risk?.stopLoss;
   const decisionSignalRisk = risk?.decisionSignalRisk;
-  const defensiveSignalCount = decisionSignalRisk?.total ?? 0;
+  const availability = getPortfolioRiskAvailability(risk);
+  const defensiveSignalCount = availability.decisionSignalRisk ? (decisionSignalRisk?.total ?? 0) : 0;
 
   return [
     {
       key: 'concentration',
       label: text.concentration,
-      value: formatPct(risk?.concentration?.topWeightPct),
-      detail: `${text.topPosition}: ${risk?.concentration?.topPositions?.[0]?.symbol ?? '--'}`,
-      tone: risk?.concentration?.alert ? 'danger' : 'success',
+      value: availability.concentration ? formatPct(concentration?.topWeightPct) : '--',
+      detail: availability.concentration ? `${text.topPosition}: ${concentration?.topPositions?.[0]?.symbol ?? '--'}` : text.unavailable,
+      tone: availability.concentration ? (concentration?.alert ? 'danger' : 'success') : 'neutral',
     },
     {
       key: 'sector',
       label: text.sector,
-      value: formatPct(risk?.sectorConcentration?.topWeightPct),
-      detail: `${text.topSector}: ${risk?.sectorConcentration?.topSectors?.[0]?.sector ?? '--'}`,
-      tone: risk?.sectorConcentration?.alert ? 'danger' : 'success',
+      value: availability.sectorConcentration ? formatPct(sectorConcentration?.topWeightPct) : '--',
+      detail: availability.sectorConcentration ? `${text.topSector}: ${sectorConcentration?.topSectors?.[0]?.sector ?? '--'}` : text.unavailable,
+      tone: availability.sectorConcentration ? (sectorConcentration?.alert ? 'danger' : 'success') : 'neutral',
     },
     {
       key: 'drawdown',
       label: text.drawdown,
-      value: formatPct(risk?.drawdown?.currentDrawdownPct),
-      detail: `${text.maxDrawdown}: ${formatPct(risk?.drawdown?.maxDrawdownPct)}`,
-      tone: risk?.drawdown?.alert ? 'danger' : 'success',
+      value: availability.drawdown ? formatPct(drawdown?.currentDrawdownPct) : '--',
+      detail: availability.drawdown ? `${text.maxDrawdown}: ${formatPct(drawdown?.maxDrawdownPct)}` : text.unavailable,
+      tone: availability.drawdown ? (drawdown?.alert ? 'danger' : 'success') : 'neutral',
     },
     {
       key: 'stop-loss',
       label: text.stopLoss,
-      value: String(risk?.stopLoss?.triggeredCount ?? 0),
-      detail: `${text.triggered}: ${risk?.stopLoss?.triggeredCount ?? 0} · ${text.near}: ${risk?.stopLoss?.nearCount ?? 0}`,
-      tone: risk?.stopLoss?.nearAlert ? 'danger' : 'success',
+      value: availability.stopLoss ? String(stopLoss?.triggeredCount ?? 0) : '--',
+      detail: availability.stopLoss ? `${text.triggered}: ${stopLoss?.triggeredCount ?? 0} · ${text.near}: ${stopLoss?.nearCount ?? 0}` : text.unavailable,
+      tone: availability.stopLoss ? (stopLoss?.nearAlert ? 'danger' : 'success') : 'neutral',
     },
     {
       key: 'ai-signal',
       label: text.aiSignal,
-      value: String(defensiveSignalCount),
-      detail: decisionSignalRisk?.available === false ? text.unavailable : `${text.active}: ${defensiveSignalCount}`,
-      tone: decisionSignalRisk?.available === false ? 'neutral' : defensiveSignalCount > 0 ? 'warning' : 'success',
+      value: availability.decisionSignalRisk ? String(defensiveSignalCount) : '--',
+      detail: availability.decisionSignalRisk ? `${text.active}: ${defensiveSignalCount}` : text.unavailable,
+      tone: availability.decisionSignalRisk ? (defensiveSignalCount > 0 ? 'warning' : 'success') : 'neutral',
     },
     {
       key: 'price-quality',
       label: text.priceQuality,
-      value: String(missingPriceCount + stalePriceCount),
+      value: String(priceIssueCount),
       detail: `${text.missingPrice}: ${missingPriceCount} · ${text.stalePrice}: ${stalePriceCount}`,
       tone: missingPriceCount > 0 ? 'danger' : stalePriceCount > 0 ? 'warning' : 'success',
     },
@@ -696,19 +777,25 @@ const PortfolioPage: React.FC = () => {
     rows.sort((a, b) => Number(b.marketValueBase || 0) - Number(a.marketValueBase || 0));
     return rows;
   }, [snapshot]);
-  const exposureTotal = snapshot?.totalMarketValue || positionRows.reduce((sum, row) => sum + Number(row.marketValueBase || 0), 0);
+  const exposureTotal = snapshot?.totalMarketValue || 0;
   const marketExposureRows = useMemo(
-    () => buildExposureRows(positionRows, 'market', exposureTotal),
-    [exposureTotal, positionRows],
+    () => buildExposureRows(snapshot, 'market'),
+    [snapshot],
   );
   const currencyExposureRows = useMemo(
-    () => buildExposureRows(positionRows, 'currency', exposureTotal),
-    [exposureTotal, positionRows],
+    () => buildExposureRows(snapshot, 'currency'),
+    [snapshot],
   );
   const portfolioRiskFlags = useMemo(
     () => buildPortfolioRiskFlags(risk, positionRows, riskDashboardText),
     [positionRows, risk, riskDashboardText],
   );
+  const riskAvailability = useMemo(() => getPortfolioRiskAvailability(risk), [risk]);
+  const concentrationTopWeight = riskAvailability.sectorConcentration
+    ? risk?.sectorConcentration?.topWeightPct
+    : riskAvailability.concentration
+      ? risk?.concentration?.topWeightPct
+      : null;
 
   const snapshotMatchesAccountScope = useMemo(() => {
     if (!snapshot) return false;
@@ -1580,8 +1667,8 @@ const PortfolioPage: React.FC = () => {
           )}
           <div className="mt-3 text-xs text-secondary space-y-1">
             <div>{text.displayScope}: {concentrationMode === 'sector' ? text.sectorDimension : text.positionDimensionFallback}</div>
-            <div>{text.sectorAlert}: {risk?.sectorConcentration?.alert ? text.yes : text.no}</div>
-            <div>{text.topWeight}: {formatPct(risk?.sectorConcentration?.topWeightPct ?? risk?.concentration?.topWeightPct)}</div>
+            <div>{text.sectorAlert}: {riskAvailability.sectorConcentration ? (risk?.sectorConcentration?.alert ? text.yes : text.no) : riskDashboardText.unavailable}</div>
+            <div>{text.topWeight}: {formatPct(concentrationTopWeight)}</div>
           </div>
         </Card>
       </section>
@@ -1598,17 +1685,17 @@ const PortfolioPage: React.FC = () => {
         <Card padding="md">
           <h3 className="text-sm font-semibold text-foreground mb-2">{text.drawdownMonitor}</h3>
           <div className="text-xs text-secondary space-y-1">
-            <div>{text.maxDrawdown}: {formatPct(risk?.drawdown?.maxDrawdownPct)}</div>
-            <div>{text.currentDrawdown}: {formatPct(risk?.drawdown?.currentDrawdownPct)}</div>
-            <div>{text.alert}: {risk?.drawdown?.alert ? text.yes : text.no}</div>
+            <div>{text.maxDrawdown}: {riskAvailability.drawdown ? formatPct(risk?.drawdown?.maxDrawdownPct) : '--'}</div>
+            <div>{text.currentDrawdown}: {riskAvailability.drawdown ? formatPct(risk?.drawdown?.currentDrawdownPct) : '--'}</div>
+            <div>{text.alert}: {riskAvailability.drawdown ? (risk?.drawdown?.alert ? text.yes : text.no) : riskDashboardText.unavailable}</div>
           </div>
         </Card>
         <Card padding="md">
           <h3 className="text-sm font-semibold text-foreground mb-2">{text.stopLossWarning}</h3>
           <div className="text-xs text-secondary space-y-1">
-            <div>{text.triggeredCount}: {risk?.stopLoss?.triggeredCount ?? 0}</div>
-            <div>{text.nearCount}: {risk?.stopLoss?.nearCount ?? 0}</div>
-            <div>{text.alert}: {risk?.stopLoss?.nearAlert ? text.yes : text.no}</div>
+            <div>{text.triggeredCount}: {riskAvailability.stopLoss ? (risk?.stopLoss?.triggeredCount ?? 0) : '--'}</div>
+            <div>{text.nearCount}: {riskAvailability.stopLoss ? (risk?.stopLoss?.nearCount ?? 0) : '--'}</div>
+            <div>{text.alert}: {riskAvailability.stopLoss ? (risk?.stopLoss?.nearAlert ? text.yes : text.no) : riskDashboardText.unavailable}</div>
           </div>
         </Card>
         <Card padding="md">
@@ -1622,7 +1709,7 @@ const PortfolioPage: React.FC = () => {
         <Card padding="md">
           <h3 className="text-sm font-semibold text-foreground mb-2">{text.aiRiskSignals}</h3>
           <div className="text-xs text-secondary space-y-1">
-            {risk?.decisionSignalRisk?.available === false ? (
+            {!riskAvailability.decisionSignalRisk ? (
               <div className="text-warning">{text.aiRiskUnavailable}</div>
             ) : (
               <>
