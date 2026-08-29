@@ -1086,6 +1086,58 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getByText('行业数据暂不可用，当前展示个股集中度')).toBeInTheDocument();
   });
 
+  it('treats a malformed sector row collection as unavailable', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 70,
+        alert: true,
+        topSectors: { sector: 'Technology', weightPct: 70 } as never,
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const sectorFlag = screen.getByText('行业集中').closest('div.rounded-xl');
+    expect(sectorFlag).not.toBeNull();
+    expect(within(sectorFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(screen.getByText('行业数据暂不可用，当前展示个股集中度')).toBeInTheDocument();
+  });
+
+  it('marks stop-loss risk unavailable when any holding lacks a usable quote', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      fxStale: false,
+      positions: [makePosition({
+        lastPrice: 0,
+        priceAvailable: false,
+        priceStale: true,
+      })],
+    }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      stopLoss: {
+        nearAlert: true,
+        triggeredCount: 1,
+        nearCount: 0,
+        items: [{ symbol: '600519' }],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const stopLossFlag = screen.getByText('止损').closest('div.rounded-xl');
+    expect(stopLossFlag).not.toBeNull();
+    expect(within(stopLossFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(stopLossFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    const stopLossCard = screen.getByText('止损接近预警').closest('div.rounded-2xl');
+    expect(stopLossCard).not.toBeNull();
+    expect(within(stopLossCard as HTMLElement).getByText('告警: 不可用')).toBeInTheDocument();
+  });
+
   it('uses the validated sector block alert when a top row disagrees', async () => {
     getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
     getRisk.mockResolvedValueOnce(makeRisk({

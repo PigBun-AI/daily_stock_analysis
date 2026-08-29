@@ -231,7 +231,9 @@ function hasNumberField(value: unknown, field: string): value is Record<string, 
 }
 
 function getClassifiedSectorRows(risk: PortfolioRiskResponse | null) {
-  return (risk?.sectorConcentration?.topSectors || []).filter((item) => (
+  const rows = risk?.sectorConcentration?.topSectors;
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((item) => (
     typeof item?.sector === 'string'
       && item.sector.trim().length > 0
       && item.sector.trim().toUpperCase() !== UNCLASSIFIED_SECTOR
@@ -243,6 +245,7 @@ function getClassifiedSectorRows(risk: PortfolioRiskResponse | null) {
 function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
   const sectorConcentration = risk?.sectorConcentration;
   if (!sectorConcentration) return false;
+  if (!Array.isArray(sectorConcentration.topSectors)) return false;
   const coverage = sectorConcentration.coverage || {};
   if (
     !hasNumberField(coverage, 'unclassifiedCount')
@@ -275,6 +278,14 @@ function getPortfolioRiskAvailability(
   const decisionSignalRisk = risk?.decisionSignalRisk;
 
   const fxQualityAvailable = snapshot !== null && snapshot.fxStale === false;
+  const stopLossPriceQualityAvailable = snapshot !== null
+    && Array.isArray(snapshot.accounts)
+    && snapshot.accounts.every((account) => (
+      Array.isArray(account.positions)
+        && account.positions.every((position) => (
+          position.priceAvailable === true
+        ))
+    ));
 
   return {
     concentration: fxQualityAvailable
@@ -292,7 +303,8 @@ function getPortfolioRiskAvailability(
       && hasBooleanField(drawdown, 'fxStale')
       && drawdown.fxStale === false
       && hasBooleanField(drawdown, 'alert'),
-    stopLoss: hasNumberField(stopLoss, 'triggeredCount')
+    stopLoss: stopLossPriceQualityAvailable
+      && hasNumberField(stopLoss, 'triggeredCount')
       && hasNumberField(stopLoss, 'nearCount')
       && hasBooleanField(stopLoss, 'nearAlert'),
     decisionSignalRisk: hasBooleanField(decisionSignalRisk, 'available')
