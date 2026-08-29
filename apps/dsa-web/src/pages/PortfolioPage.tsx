@@ -440,7 +440,7 @@ const PortfolioExposureList: React.FC<{
       </div>
     ) : (
       <div className="mt-3 space-y-3">
-        {rows.slice(0, 5).map((row) => (
+        {rows.map((row) => (
           <div key={row.key}>
             <div className="flex items-center justify-between gap-3 text-xs">
               <span className="font-mono font-semibold text-foreground">{row.label}</span>

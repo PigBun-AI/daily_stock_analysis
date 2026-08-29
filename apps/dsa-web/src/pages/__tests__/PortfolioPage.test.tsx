@@ -660,6 +660,29 @@ describe('PortfolioPage FX refresh', () => {
     expect(dashboardScope.getAllByText('暂无暴露数据')).toHaveLength(2);
   });
 
+  it('renders every market exposure group instead of silently dropping the remainder', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      positions: [
+        makePosition({ symbol: '600519', market: 'cn', marketValueBase: 100 }),
+        makePosition({ symbol: 'HK00700', market: 'hk', marketValueBase: 100 }),
+        makePosition({ symbol: 'AAPL', market: 'us', marketValueBase: 100 }),
+        makePosition({ symbol: '7203.T', market: 'jp', marketValueBase: 100 }),
+        makePosition({ symbol: '005930.KS', market: 'kr', marketValueBase: 100 }),
+        makePosition({ symbol: '2330.TW', market: 'tw', marketValueBase: 100 }),
+      ],
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const marketExposure = screen.getByText('市场暴露').closest('div.rounded-xl');
+    expect(marketExposure).not.toBeNull();
+    const exposureScope = within(marketExposure as HTMLElement);
+    for (const market of ['CN', 'HK', 'US', 'JP', 'KR', 'TW']) {
+      expect(exposureScope.getByText(market)).toBeInTheDocument();
+    }
+  });
+
   it('marks server-derived risk flags unavailable when risk loading fails', async () => {
     getRisk.mockRejectedValueOnce(
       createApiError(

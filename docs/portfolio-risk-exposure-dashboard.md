@@ -21,6 +21,7 @@ Web 持仓页新增“风险与暴露看板”，放在组合总览指标和持�
 | 币种暴露 | 先将 `position.marketValueBase` 从账户基准币折算到快照聚合币种，再按 `position.currency` 聚合 |
 
 权重使用当前快照 `totalMarketValue` 作为分母。
+市场与币种暴露渲染全部非零分组，不截断 Top N，保证页面展示的权重不会因静默丢弃尾部分组而少于实际覆盖。
 
 ## 边界
 
