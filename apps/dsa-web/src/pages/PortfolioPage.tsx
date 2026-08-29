@@ -269,7 +269,7 @@ function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): Portf
     drawdown: hasNumberField(drawdown, 'currentDrawdownPct')
       && hasNumberField(drawdown, 'maxDrawdownPct')
       && hasNumberField(drawdown, 'seriesPoints')
-      && drawdown.seriesPoints > 0
+      && drawdown.seriesPoints > 1
       && hasBooleanField(drawdown, 'alert'),
     stopLoss: hasNumberField(stopLoss, 'triggeredCount')
       && hasNumberField(stopLoss, 'nearCount')
@@ -335,6 +335,7 @@ function buildExposureRows(
 function buildPortfolioRiskFlags(
   risk: PortfolioRiskResponse | null,
   positions: FlatPosition[],
+  snapshotAvailable: boolean,
   text: RiskDashboardText,
 ): PortfolioRiskFlag[] {
   const missingPriceCount = positions.filter((position) => !hasPositionPrice(position)).length;
@@ -387,9 +388,13 @@ function buildPortfolioRiskFlags(
     {
       key: 'price-quality',
       label: text.priceQuality,
-      value: String(priceIssueCount),
-      detail: `${text.missingPrice}: ${missingPriceCount} · ${text.stalePrice}: ${stalePriceCount}`,
-      tone: missingPriceCount > 0 ? 'danger' : stalePriceCount > 0 ? 'warning' : 'success',
+      value: snapshotAvailable ? String(priceIssueCount) : '--',
+      detail: snapshotAvailable
+        ? `${text.missingPrice}: ${missingPriceCount} · ${text.stalePrice}: ${stalePriceCount}`
+        : text.unavailable,
+      tone: snapshotAvailable
+        ? missingPriceCount > 0 ? 'danger' : stalePriceCount > 0 ? 'warning' : 'success'
+        : 'neutral',
     },
   ];
 }
@@ -816,8 +821,8 @@ const PortfolioPage: React.FC = () => {
     [snapshot],
   );
   const portfolioRiskFlags = useMemo(
-    () => buildPortfolioRiskFlags(risk, positionRows, riskDashboardText),
-    [positionRows, risk, riskDashboardText],
+    () => buildPortfolioRiskFlags(risk, positionRows, snapshot !== null, riskDashboardText),
+    [positionRows, risk, riskDashboardText, snapshot],
   );
   const riskAvailability = useMemo(() => getPortfolioRiskAvailability(risk), [risk]);
   const topClassifiedSector = useMemo(() => getClassifiedSectorRows(risk)[0], [risk]);
@@ -949,7 +954,7 @@ const PortfolioPage: React.FC = () => {
   }, [risk, riskAvailability.sectorConcentration]);
 
   const positionFallbackPieData = useMemo(() => {
-    if (!risk?.concentration?.topPositions?.length) {
+    if (!riskAvailability.concentration || !risk?.concentration?.topPositions?.length) {
       return [];
     }
     return risk.concentration.topPositions
@@ -959,7 +964,7 @@ const PortfolioPage: React.FC = () => {
         value: Number(item.weightPct || 0),
       }))
       .filter((item) => item.value > 0);
-  }, [risk]);
+  }, [risk, riskAvailability.concentration]);
 
   const concentrationPieData = sectorPieData.length > 0 ? sectorPieData : positionFallbackPieData;
   const concentrationMode = sectorPieData.length > 0 ? 'sector' : 'position';

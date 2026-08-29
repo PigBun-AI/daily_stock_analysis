@@ -746,6 +746,38 @@ describe('PortfolioPage FX refresh', () => {
     expect(within(drawdownFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
   });
 
+  it('treats one-point drawdown as unavailable because no decline can be measured', async () => {
+    getRisk.mockResolvedValueOnce(makeRisk({
+      drawdown: {
+        seriesPoints: 1,
+        maxDrawdownPct: 0,
+        currentDrawdownPct: 0,
+        alert: false,
+        fxStale: false,
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const drawdownFlag = screen.getByText('回撤').closest('div.rounded-xl');
+    expect(drawdownFlag).not.toBeNull();
+    expect(within(drawdownFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(drawdownFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+  });
+
+  it('marks price quality unavailable when the portfolio snapshot fails', async () => {
+    getSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable'));
+
+    render(<PortfolioPage />);
+
+    await screen.findByText('snapshot unavailable');
+    const priceFlag = (await screen.findByText('价格质量')).closest('div.rounded-xl');
+    expect(priceFlag).not.toBeNull();
+    expect(within(priceFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(priceFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+  });
+
   it('treats partial server risk blocks as unavailable instead of normal', async () => {
     getRisk.mockResolvedValueOnce({
       ...makeRisk(),
@@ -796,6 +828,7 @@ describe('PortfolioPage FX refresh', () => {
     const concentrationScope = within(concentrationCard as HTMLElement);
     expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
     expect(concentrationScope.getByText('Top1 权重: --')).toBeInTheDocument();
+    expect(concentrationScope.queryByText('600519')).not.toBeInTheDocument();
 
     const drawdownCard = screen.getByText('回撤监控').closest('div.rounded-2xl');
     expect(drawdownCard).not.toBeNull();
