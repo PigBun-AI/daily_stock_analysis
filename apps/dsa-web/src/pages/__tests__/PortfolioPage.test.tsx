@@ -1084,6 +1084,55 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.queryByText('Top1: 白酒')).not.toBeInTheDocument();
   });
 
+  it('requires an explicit sector error array before declaring sector risk available', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 70,
+        alert: false,
+        topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: false }],
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
+      } as never,
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const sectorFlag = screen.getByText('行业集中').closest('div.rounded-xl');
+    expect(sectorFlag).not.toBeNull();
+    expect(within(sectorFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(screen.queryByText('Top1: 白酒')).not.toBeInTheDocument();
+  });
+
+  it('rejects numeric-string sector weights without crashing the page', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 70,
+        alert: false,
+        topSectors: [{
+          sector: '白酒',
+          marketValueBase: 7000,
+          weightPct: '70',
+          symbolCount: 2,
+          isAlert: false,
+        } as never],
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const sectorFlag = screen.getByText('行业集中').closest('div.rounded-xl');
+    expect(sectorFlag).not.toBeNull();
+    expect(within(sectorFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(screen.getByText('行业数据暂不可用，当前展示个股集中度')).toBeInTheDocument();
+  });
+
   it('treats malformed sector rows as unavailable instead of crashing the page', async () => {
     getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
     getRisk.mockResolvedValueOnce(makeRisk({

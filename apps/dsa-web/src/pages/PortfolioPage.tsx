@@ -255,8 +255,9 @@ function getClassifiedSectorRows(risk: PortfolioRiskResponse | null) {
     typeof item?.sector === 'string'
       && item.sector.trim().length > 0
       && item.sector.trim().toUpperCase() !== UNCLASSIFIED_SECTOR
-      && Number.isFinite(Number(item.weightPct))
-      && Number(item.weightPct) > 0
+      && typeof item.weightPct === 'number'
+      && Number.isFinite(item.weightPct)
+      && item.weightPct > 0
   ));
 }
 
@@ -264,6 +265,7 @@ function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
   const sectorConcentration = risk?.sectorConcentration;
   if (!sectorConcentration) return false;
   if (!Array.isArray(sectorConcentration.topSectors)) return false;
+  if (!Array.isArray(sectorConcentration.errors)) return false;
   const coverage = sectorConcentration.coverage || {};
   if (
     !hasNumberField(coverage, 'unclassifiedCount')
@@ -276,13 +278,17 @@ function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
       && Number(item.weightPct) > 0
   ));
   const hasInvalidRows = (sectorConcentration.topSectors || []).some((item) => (
-    typeof item?.sector !== 'string' || item.sector.trim().length === 0
+    typeof item?.sector !== 'string'
+      || item.sector.trim().length === 0
+      || typeof item.weightPct !== 'number'
+      || !Number.isFinite(item.weightPct)
+      || item.weightPct <= 0
   ));
   return !hasUnclassifiedRows
     && !hasInvalidRows
     && coverage.unclassifiedCount === 0
     && coverage.failedCount === 0
-    && (sectorConcentration.errors || []).length === 0;
+    && sectorConcentration.errors.length === 0;
 }
 
 function getPortfolioRiskAvailability(
