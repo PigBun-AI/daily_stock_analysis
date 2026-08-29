@@ -796,6 +796,92 @@ describe('PortfolioPage FX refresh', () => {
     expect(within(aiRiskCard as HTMLElement).getByText('信号风险暂不可用')).toBeInTheDocument();
   });
 
+  it('treats an all-UNCLASSIFIED sector result as unavailable and falls back to positions', async () => {
+    getRisk.mockResolvedValueOnce(makeRisk({
+      concentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 60,
+        alert: true,
+        topPositions: [{ symbol: 'AAPL', marketValueBase: 6000, weightPct: 60, isAlert: true }],
+      },
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 100,
+        alert: true,
+        topSectors: [{
+          sector: 'UNCLASSIFIED',
+          marketValueBase: 10000,
+          weightPct: 100,
+          symbolCount: 2,
+          isAlert: true,
+        }],
+        coverage: { classifiedCount: 0, unclassifiedCount: 2 },
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+
+    const sectorFlag = screen.getByText('行业集中').closest('div.rounded-xl');
+    expect(sectorFlag).not.toBeNull();
+    expect(within(sectorFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    expect(within(sectorFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+
+    const concentrationCard = screen.getByText('行业数据暂不可用，当前展示个股集中度').closest('div.rounded-2xl');
+    expect(concentrationCard).not.toBeNull();
+    const concentrationScope = within(concentrationCard as HTMLElement);
+    expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
+    expect(concentrationScope.getByText('Top1 权重: 60.00%')).toBeInTheDocument();
+    expect(screen.queryByText('UNCLASSIFIED')).not.toBeInTheDocument();
+  });
+
+  it('excludes UNCLASSIFIED from partially covered sector risk and uses the top classified row', async () => {
+    getRisk.mockResolvedValueOnce(makeRisk({
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 60,
+        alert: true,
+        topSectors: [
+          {
+            sector: 'UNCLASSIFIED',
+            marketValueBase: 6000,
+            weightPct: 60,
+            symbolCount: 2,
+            isAlert: true,
+          },
+          {
+            sector: 'Technology',
+            marketValueBase: 4000,
+            weightPct: 40,
+            symbolCount: 1,
+            isAlert: false,
+          },
+        ],
+        coverage: { classifiedCount: 1, unclassifiedCount: 2 },
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+
+    const dashboard = screen.getByText('风险与暴露看板').closest('section');
+    expect(dashboard).not.toBeNull();
+    const dashboardScope = within(dashboard as HTMLElement);
+    expect(dashboardScope.getByText('Top1: Technology')).toBeInTheDocument();
+    expect(dashboardScope.getByText('40.00%')).toBeInTheDocument();
+
+    const concentrationCard = screen.getByText('行业集中度分布').closest('div.rounded-2xl');
+    expect(concentrationCard).not.toBeNull();
+    const concentrationScope = within(concentrationCard as HTMLElement);
+    expect(concentrationScope.getByText('板块集中度告警: 否')).toBeInTheDocument();
+    expect(concentrationScope.getByText('Top1 权重: 40.00%')).toBeInTheDocument();
+    expect(screen.queryByText('UNCLASSIFIED')).not.toBeInTheDocument();
+  });
+
   it('counts missing and stale price-quality positions without double counting missing quotes', async () => {
     getSnapshot.mockResolvedValueOnce(makeSnapshot({
       positions: [

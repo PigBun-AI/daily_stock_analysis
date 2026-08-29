@@ -55,6 +55,7 @@ import { parseDecisionSignalDate } from '../utils/decisionSignalTime';
 import { buildDecisionActionLabelMap, getDecisionActionLabel } from '../utils/decisionAction';
 
 const PIE_COLORS = ['#00d4ff', '#00ff88', '#ffaa00', '#ff7a45', '#7f8cff', '#ff4466'];
+const UNCLASSIFIED_SECTOR = 'UNCLASSIFIED';
 const DEFAULT_PAGE_SIZE = 20;
 const PORTFOLIO_SIGNAL_LOOKUP_CONCURRENCY = 6;
 const FALLBACK_BROKERS: PortfolioImportBrokerItem[] = [
@@ -229,6 +230,14 @@ function hasNumberField(value: unknown, field: string): value is Record<string, 
   return typeof value[field] === 'number' && Number.isFinite(value[field]);
 }
 
+function getClassifiedSectorRows(risk: PortfolioRiskResponse | null) {
+  return (risk?.sectorConcentration?.topSectors || []).filter((item) => (
+    item.sector.trim().toUpperCase() !== UNCLASSIFIED_SECTOR
+      && Number.isFinite(Number(item.weightPct))
+      && Number(item.weightPct) > 0
+  ));
+}
+
 function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): PortfolioRiskAvailability {
   const concentration = risk?.concentration;
   const sectorConcentration = risk?.sectorConcentration;
@@ -238,7 +247,9 @@ function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): Portf
 
   return {
     concentration: hasNumberField(concentration, 'topWeightPct') && hasBooleanField(concentration, 'alert'),
-    sectorConcentration: hasNumberField(sectorConcentration, 'topWeightPct') && hasBooleanField(sectorConcentration, 'alert'),
+    sectorConcentration: hasNumberField(sectorConcentration, 'topWeightPct')
+      && hasBooleanField(sectorConcentration, 'alert')
+      && getClassifiedSectorRows(risk).length > 0,
     drawdown: hasNumberField(drawdown, 'currentDrawdownPct')
       && hasNumberField(drawdown, 'maxDrawdownPct')
       && hasBooleanField(drawdown, 'alert'),
@@ -312,7 +323,7 @@ function buildPortfolioRiskFlags(
   const stalePriceCount = positions.filter((position) => hasPositionPrice(position) && position.priceStale).length;
   const priceIssueCount = missingPriceCount + stalePriceCount;
   const concentration = risk?.concentration;
-  const sectorConcentration = risk?.sectorConcentration;
+  const topClassifiedSector = getClassifiedSectorRows(risk)[0];
   const drawdown = risk?.drawdown;
   const stopLoss = risk?.stopLoss;
   const decisionSignalRisk = risk?.decisionSignalRisk;
@@ -330,9 +341,9 @@ function buildPortfolioRiskFlags(
     {
       key: 'sector',
       label: text.sector,
-      value: availability.sectorConcentration ? formatPct(sectorConcentration?.topWeightPct) : '--',
-      detail: availability.sectorConcentration ? `${text.topSector}: ${sectorConcentration?.topSectors?.[0]?.sector ?? '--'}` : text.unavailable,
-      tone: availability.sectorConcentration ? (sectorConcentration?.alert ? 'danger' : 'success') : 'neutral',
+      value: availability.sectorConcentration ? formatPct(topClassifiedSector?.weightPct) : '--',
+      detail: availability.sectorConcentration ? `${text.topSector}: ${topClassifiedSector?.sector ?? '--'}` : text.unavailable,
+      tone: availability.sectorConcentration ? (topClassifiedSector?.isAlert ? 'danger' : 'success') : 'neutral',
     },
     {
       key: 'drawdown',
@@ -791,8 +802,9 @@ const PortfolioPage: React.FC = () => {
     [positionRows, risk, riskDashboardText],
   );
   const riskAvailability = useMemo(() => getPortfolioRiskAvailability(risk), [risk]);
+  const topClassifiedSector = useMemo(() => getClassifiedSectorRows(risk)[0], [risk]);
   const concentrationTopWeight = riskAvailability.sectorConcentration
-    ? risk?.sectorConcentration?.topWeightPct
+    ? topClassifiedSector?.weightPct
     : riskAvailability.concentration
       ? risk?.concentration?.topWeightPct
       : null;
@@ -908,8 +920,7 @@ const PortfolioPage: React.FC = () => {
   };
 
   const sectorPieData = useMemo(() => {
-    const sectors = risk?.sectorConcentration?.topSectors || [];
-    return sectors
+    return getClassifiedSectorRows(risk)
       .slice(0, 6)
       .map((item) => ({
         name: item.sector,
@@ -1667,7 +1678,7 @@ const PortfolioPage: React.FC = () => {
           )}
           <div className="mt-3 text-xs text-secondary space-y-1">
             <div>{text.displayScope}: {concentrationMode === 'sector' ? text.sectorDimension : text.positionDimensionFallback}</div>
-            <div>{text.sectorAlert}: {riskAvailability.sectorConcentration ? (risk?.sectorConcentration?.alert ? text.yes : text.no) : riskDashboardText.unavailable}</div>
+            <div>{text.sectorAlert}: {riskAvailability.sectorConcentration ? (topClassifiedSector?.isAlert ? text.yes : text.no) : riskDashboardText.unavailable}</div>
             <div>{text.topWeight}: {formatPct(concentrationTopWeight)}</div>
           </div>
         </Card>
