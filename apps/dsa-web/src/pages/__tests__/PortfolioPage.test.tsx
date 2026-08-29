@@ -204,7 +204,7 @@ function makeRisk(overrides: Record<string, unknown> = {}) {
       topWeightPct: 0,
       alert: false,
       topSectors: [],
-      coverage: {},
+      coverage: { unclassifiedCount: 0, failedCount: 0 },
       errors: [],
     },
     drawdown: {
@@ -396,7 +396,7 @@ describe('PortfolioPage FX refresh', () => {
         topWeightPct: 70,
         alert: true,
         topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: true }],
-        coverage: {},
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
       drawdown: {
@@ -892,7 +892,7 @@ describe('PortfolioPage FX refresh', () => {
         totalMarketValue: 10000,
         topWeightPct: 70,
         topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: true }],
-        coverage: {},
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       } as never,
       drawdown: {
@@ -1033,6 +1033,52 @@ describe('PortfolioPage FX refresh', () => {
     expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
     expect(concentrationScope.getByText('Top1 权重: 0.00%')).toBeInTheDocument();
     expect(screen.queryByText('UNCLASSIFIED')).not.toBeInTheDocument();
+  });
+
+  it('requires explicit sector coverage counters before declaring sector risk available', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 70,
+        alert: false,
+        topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: false }],
+        coverage: {},
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const sectorFlag = screen.getByText('行业集中').closest('div.rounded-xl');
+    expect(sectorFlag).not.toBeNull();
+    expect(within(sectorFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(sectorFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    expect(screen.queryByText('Top1: 白酒')).not.toBeInTheDocument();
+  });
+
+  it('uses the validated sector block alert when a top row disagrees', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 70,
+        alert: true,
+        topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: false }],
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const sectorFlag = screen.getByText('行业集中').closest('div.rounded-xl');
+    expect(sectorFlag).not.toBeNull();
+    expect(within(sectorFlag as HTMLElement).getByText('需处理')).toBeInTheDocument();
+    expect(within(sectorFlag as HTMLElement).getByText('70.00%')).toBeInTheDocument();
+    expect(screen.getByText('板块集中度告警: 是')).toBeInTheDocument();
   });
 
   it('counts missing and stale price-quality positions without double counting missing quotes', async () => {

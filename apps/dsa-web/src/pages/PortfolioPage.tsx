@@ -242,14 +242,18 @@ function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
   const sectorConcentration = risk?.sectorConcentration;
   if (!sectorConcentration) return false;
   const coverage = sectorConcentration.coverage || {};
+  if (
+    !hasNumberField(coverage, 'unclassifiedCount')
+    || !hasNumberField(coverage, 'failedCount')
+  ) return false;
   const hasUnclassifiedRows = (sectorConcentration.topSectors || []).some((item) => (
     item.sector.trim().toUpperCase() === UNCLASSIFIED_SECTOR
       && Number.isFinite(Number(item.weightPct))
       && Number(item.weightPct) > 0
   ));
   return !hasUnclassifiedRows
-    && Number(coverage.unclassifiedCount || 0) === 0
-    && Number(coverage.failedCount || 0) === 0
+    && coverage.unclassifiedCount === 0
+    && coverage.failedCount === 0
     && (sectorConcentration.errors || []).length === 0;
 }
 
@@ -353,6 +357,7 @@ function buildPortfolioRiskFlags(
   const stalePriceCount = positions.filter((position) => hasPositionPrice(position) && position.priceStale).length;
   const priceIssueCount = missingPriceCount + stalePriceCount;
   const concentration = risk?.concentration;
+  const sectorConcentration = risk?.sectorConcentration;
   const topClassifiedSector = getClassifiedSectorRows(risk)[0];
   const drawdown = risk?.drawdown;
   const stopLoss = risk?.stopLoss;
@@ -374,7 +379,7 @@ function buildPortfolioRiskFlags(
       label: text.sector,
       value: availability.sectorConcentration ? formatPct(topClassifiedSector?.weightPct) : '--',
       detail: availability.sectorConcentration ? `${text.topSector}: ${topClassifiedSector?.sector ?? '--'}` : text.unavailable,
-      tone: availability.sectorConcentration ? (topClassifiedSector?.isAlert ? 'danger' : 'success') : 'neutral',
+      tone: availability.sectorConcentration ? (sectorConcentration?.alert ? 'danger' : 'success') : 'neutral',
     },
     {
       key: 'drawdown',
@@ -1717,7 +1722,7 @@ const PortfolioPage: React.FC = () => {
           )}
           <div className="mt-3 text-xs text-secondary space-y-1">
             <div>{text.displayScope}: {concentrationMode === 'sector' ? text.sectorDimension : text.positionDimensionFallback}</div>
-            <div>{text.sectorAlert}: {riskAvailability.sectorConcentration ? (topClassifiedSector?.isAlert ? text.yes : text.no) : riskDashboardText.unavailable}</div>
+            <div>{text.sectorAlert}: {riskAvailability.sectorConcentration ? (risk?.sectorConcentration?.alert ? text.yes : text.no) : riskDashboardText.unavailable}</div>
             <div>{text.topWeight}: {formatPct(concentrationTopWeight)}</div>
           </div>
         </Card>
