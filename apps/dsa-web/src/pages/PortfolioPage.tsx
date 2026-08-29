@@ -270,6 +270,8 @@ function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): Portf
       && hasNumberField(drawdown, 'maxDrawdownPct')
       && hasNumberField(drawdown, 'seriesPoints')
       && drawdown.seriesPoints > 1
+      && hasBooleanField(drawdown, 'fxStale')
+      && drawdown.fxStale === false
       && hasBooleanField(drawdown, 'alert'),
     stopLoss: hasNumberField(stopLoss, 'triggeredCount')
       && hasNumberField(stopLoss, 'nearCount')

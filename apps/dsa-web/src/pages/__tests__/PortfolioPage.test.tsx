@@ -789,6 +789,26 @@ describe('PortfolioPage FX refresh', () => {
     expect(within(drawdownFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
   });
 
+  it('treats stale-FX drawdown as unavailable instead of normal', async () => {
+    getRisk.mockResolvedValueOnce(makeRisk({
+      drawdown: {
+        seriesPoints: 10,
+        maxDrawdownPct: 0,
+        currentDrawdownPct: 0,
+        alert: false,
+        fxStale: true,
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const drawdownFlag = screen.getByText('回撤').closest('div.rounded-xl');
+    expect(drawdownFlag).not.toBeNull();
+    expect(within(drawdownFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(drawdownFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+  });
+
   it('marks price quality unavailable when the portfolio snapshot fails', async () => {
     getSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable'));
 
