@@ -726,6 +726,26 @@ describe('PortfolioPage FX refresh', () => {
     expect(dashboardScope.getAllByText('--').length).toBeGreaterThanOrEqual(5);
   });
 
+  it('treats zero-point drawdown as unavailable even when numeric fields are zero', async () => {
+    getRisk.mockResolvedValueOnce(makeRisk({
+      drawdown: {
+        seriesPoints: 0,
+        maxDrawdownPct: 0,
+        currentDrawdownPct: 0,
+        alert: false,
+        fxStale: false,
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const drawdownFlag = screen.getByText('回撤').closest('div.rounded-xl');
+    expect(drawdownFlag).not.toBeNull();
+    expect(within(drawdownFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(drawdownFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+  });
+
   it('treats partial server risk blocks as unavailable instead of normal', async () => {
     getRisk.mockResolvedValueOnce({
       ...makeRisk(),

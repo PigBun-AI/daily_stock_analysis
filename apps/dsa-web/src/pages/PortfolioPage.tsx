@@ -268,6 +268,8 @@ function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): Portf
       && getClassifiedSectorRows(risk).length > 0,
     drawdown: hasNumberField(drawdown, 'currentDrawdownPct')
       && hasNumberField(drawdown, 'maxDrawdownPct')
+      && hasNumberField(drawdown, 'seriesPoints')
+      && drawdown.seriesPoints > 0
       && hasBooleanField(drawdown, 'alert'),
     stopLoss: hasNumberField(stopLoss, 'triggeredCount')
       && hasNumberField(stopLoss, 'nearCount')
