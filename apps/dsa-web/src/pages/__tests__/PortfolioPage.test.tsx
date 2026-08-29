@@ -1031,7 +1031,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(concentrationCard).not.toBeNull();
     const concentrationScope = within(concentrationCard as HTMLElement);
     expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
-    expect(concentrationScope.getByText('Top1 权重: 0.00%')).toBeInTheDocument();
+    expect(concentrationScope.getByText('Top1 权重: --')).toBeInTheDocument();
     expect(screen.queryByText('UNCLASSIFIED')).not.toBeInTheDocument();
   });
 
@@ -1106,6 +1106,26 @@ describe('PortfolioPage FX refresh', () => {
     expect(sectorFlag).not.toBeNull();
     expect(within(sectorFlag as HTMLElement).getByText('--')).toBeInTheDocument();
     expect(screen.getByText('行业数据暂不可用，当前展示个股集中度')).toBeInTheDocument();
+  });
+
+  it('requires a valid top-position row before showing concentration status', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      concentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 60,
+        alert: true,
+        topPositions: { symbol: '600519', weightPct: 60 } as never,
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const concentrationFlag = screen.getByText('个股集中').closest('div.rounded-xl');
+    expect(concentrationFlag).not.toBeNull();
+    expect(within(concentrationFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(concentrationFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
   });
 
   it('marks stop-loss risk unavailable when any holding lacks a usable quote', async () => {

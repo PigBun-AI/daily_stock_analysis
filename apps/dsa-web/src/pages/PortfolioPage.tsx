@@ -230,6 +230,17 @@ function hasNumberField(value: unknown, field: string): value is Record<string, 
   return typeof value[field] === 'number' && Number.isFinite(value[field]);
 }
 
+function getValidTopPositionRows(risk: PortfolioRiskResponse | null) {
+  const rows = risk?.concentration?.topPositions;
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((item) => (
+    typeof item?.symbol === 'string'
+      && item.symbol.trim().length > 0
+      && Number.isFinite(Number(item.weightPct))
+      && Number(item.weightPct) > 0
+  ));
+}
+
 function getClassifiedSectorRows(risk: PortfolioRiskResponse | null) {
   const rows = risk?.sectorConcentration?.topSectors;
   if (!Array.isArray(rows)) return [];
@@ -290,7 +301,8 @@ function getPortfolioRiskAvailability(
   return {
     concentration: fxQualityAvailable
       && hasNumberField(concentration, 'topWeightPct')
-      && hasBooleanField(concentration, 'alert'),
+      && hasBooleanField(concentration, 'alert')
+      && getValidTopPositionRows(risk).length > 0,
     sectorConcentration: fxQualityAvailable
       && hasNumberField(sectorConcentration, 'topWeightPct')
       && hasBooleanField(sectorConcentration, 'alert')
@@ -376,6 +388,7 @@ function buildPortfolioRiskFlags(
   const stalePriceCount = positions.filter((position) => hasPositionPrice(position) && position.priceStale).length;
   const priceIssueCount = missingPriceCount + stalePriceCount;
   const concentration = risk?.concentration;
+  const topPosition = getValidTopPositionRows(risk)[0];
   const sectorConcentration = risk?.sectorConcentration;
   const topClassifiedSector = getClassifiedSectorRows(risk)[0];
   const drawdown = risk?.drawdown;
@@ -390,7 +403,7 @@ function buildPortfolioRiskFlags(
       key: 'concentration',
       label: text.concentration,
       value: availability.concentration ? formatPct(concentration?.topWeightPct) : '--',
-      detail: availability.concentration ? `${text.topPosition}: ${concentration?.topPositions?.[0]?.symbol ?? '--'}` : text.unavailable,
+      detail: availability.concentration ? `${text.topPosition}: ${topPosition?.symbol}` : text.unavailable,
       tone: availability.concentration ? (concentration?.alert ? 'danger' : 'success') : 'neutral',
     },
     {
@@ -993,10 +1006,10 @@ const PortfolioPage: React.FC = () => {
   }, [risk, riskAvailability.sectorConcentration]);
 
   const positionFallbackPieData = useMemo(() => {
-    if (!riskAvailability.concentration || !risk?.concentration?.topPositions?.length) {
+    if (!riskAvailability.concentration) {
       return [];
     }
-    return risk.concentration.topPositions
+    return getValidTopPositionRows(risk)
       .slice(0, 6)
       .map((item) => ({
         name: item.symbol,
