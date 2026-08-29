@@ -365,6 +365,7 @@ describe('PortfolioPage FX refresh', () => {
 
   it('renders portfolio risk flags and exposure dashboard from snapshot and risk data', async () => {
     getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      fxStale: false,
       positions: [
         makePosition({
           symbol: '600519',
@@ -662,6 +663,7 @@ describe('PortfolioPage FX refresh', () => {
 
   it('renders every market exposure group instead of silently dropping the remainder', async () => {
     getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      fxStale: false,
       positions: [
         makePosition({ symbol: '600519', market: 'cn', marketValueBase: 100 }),
         makePosition({ symbol: 'HK00700', market: 'hk', marketValueBase: 100 }),
@@ -681,6 +683,31 @@ describe('PortfolioPage FX refresh', () => {
     for (const market of ['CN', 'HK', 'US', 'JP', 'KR', 'TW']) {
       expect(exposureScope.getByText(market)).toBeInTheDocument();
     }
+  });
+
+  it('hides exposure amounts and weights when aggregate FX uses stale fallback values', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      fxStale: true,
+      positions: [
+        makePosition({
+          symbol: 'AAPL',
+          market: 'us',
+          currency: 'USD',
+          valuationCurrency: 'USD',
+          marketValueBase: 100,
+        }),
+      ],
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const dashboard = screen.getByText('风险与暴露看板').closest('section');
+    expect(dashboard).not.toBeNull();
+    const dashboardScope = within(dashboard as HTMLElement);
+    expect(dashboardScope.getAllByText('暂无暴露数据')).toHaveLength(2);
+    expect(dashboardScope.queryByText('CNY 100.00')).not.toBeInTheDocument();
+    expect(dashboardScope.queryByText('100.00%')).not.toBeInTheDocument();
   });
 
   it('marks server-derived risk flags unavailable when risk loading fails', async () => {

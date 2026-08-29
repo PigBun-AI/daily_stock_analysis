@@ -287,6 +287,7 @@ function buildExposureRows(
   groupBy: 'market' | 'currency',
 ): PortfolioExposureRow[] {
   if (!snapshot) return [];
+  if (snapshot.fxStale) return [];
   const accounts = snapshot.accounts || [];
   const totalMarketValue = Number(snapshot.totalMarketValue || 0);
   const snapshotCurrency = String(snapshot.currency || 'CNY').toUpperCase();
