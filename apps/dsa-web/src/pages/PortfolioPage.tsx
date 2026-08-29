@@ -232,7 +232,9 @@ function hasNumberField(value: unknown, field: string): value is Record<string, 
 
 function getClassifiedSectorRows(risk: PortfolioRiskResponse | null) {
   return (risk?.sectorConcentration?.topSectors || []).filter((item) => (
-    item.sector.trim().toUpperCase() !== UNCLASSIFIED_SECTOR
+    typeof item?.sector === 'string'
+      && item.sector.trim().length > 0
+      && item.sector.trim().toUpperCase() !== UNCLASSIFIED_SECTOR
       && Number.isFinite(Number(item.weightPct))
       && Number(item.weightPct) > 0
   ));
@@ -247,11 +249,16 @@ function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
     || !hasNumberField(coverage, 'failedCount')
   ) return false;
   const hasUnclassifiedRows = (sectorConcentration.topSectors || []).some((item) => (
-    item.sector.trim().toUpperCase() === UNCLASSIFIED_SECTOR
+    typeof item?.sector === 'string'
+      && item.sector.trim().toUpperCase() === UNCLASSIFIED_SECTOR
       && Number.isFinite(Number(item.weightPct))
       && Number(item.weightPct) > 0
   ));
+  const hasInvalidRows = (sectorConcentration.topSectors || []).some((item) => (
+    typeof item?.sector !== 'string' || item.sector.trim().length === 0
+  ));
   return !hasUnclassifiedRows
+    && !hasInvalidRows
     && coverage.unclassifiedCount === 0
     && coverage.failedCount === 0
     && (sectorConcentration.errors || []).length === 0;
