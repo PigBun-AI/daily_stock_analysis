@@ -237,6 +237,15 @@ function hasFreshFxEvidence(snapshot: PortfolioSnapshotResponse | null): boolean
     && snapshot.accounts.every((account) => account.fxStale === false);
 }
 
+function hasCompletePositionPriceCoverage(snapshot: PortfolioSnapshotResponse | null): boolean {
+  return snapshot !== null
+    && Array.isArray(snapshot.accounts)
+    && snapshot.accounts.every((account) => (
+      Array.isArray(account.positions)
+        && account.positions.every((position) => position.priceAvailable === true)
+    ));
+}
+
 function getValidTopPositionRows(risk: PortfolioRiskResponse | null) {
   const rows = risk?.concentration?.topPositions;
   if (!Array.isArray(rows)) return [];
@@ -302,21 +311,16 @@ function getPortfolioRiskAvailability(
   const decisionSignalRisk = risk?.decisionSignalRisk;
 
   const fxQualityAvailable = hasFreshFxEvidence(snapshot);
-  const stopLossPriceQualityAvailable = snapshot !== null
-    && Array.isArray(snapshot.accounts)
-    && snapshot.accounts.every((account) => (
-      Array.isArray(account.positions)
-        && account.positions.every((position) => (
-          position.priceAvailable === true
-        ))
-    ));
+  const priceCoverageAvailable = hasCompletePositionPriceCoverage(snapshot);
 
   return {
     concentration: fxQualityAvailable
+      && priceCoverageAvailable
       && hasNumberField(concentration, 'topWeightPct')
       && hasBooleanField(concentration, 'alert')
       && getValidTopPositionRows(risk).length > 0,
     sectorConcentration: fxQualityAvailable
+      && priceCoverageAvailable
       && hasNumberField(sectorConcentration, 'topWeightPct')
       && hasBooleanField(sectorConcentration, 'alert')
       && hasCompleteSectorCoverage(risk)
@@ -328,7 +332,7 @@ function getPortfolioRiskAvailability(
       && hasBooleanField(drawdown, 'fxStale')
       && drawdown.fxStale === false
       && hasBooleanField(drawdown, 'alert'),
-    stopLoss: stopLossPriceQualityAvailable
+    stopLoss: priceCoverageAvailable
       && hasNumberField(stopLoss, 'triggeredCount')
       && hasNumberField(stopLoss, 'nearCount')
       && hasBooleanField(stopLoss, 'nearAlert'),
@@ -344,6 +348,7 @@ function buildExposureRows(
 ): PortfolioExposureRow[] {
   if (!snapshot) return [];
   if (!hasFreshFxEvidence(snapshot)) return [];
+  if (!hasCompletePositionPriceCoverage(snapshot)) return [];
   const accounts = snapshot.accounts || [];
   const totalMarketValue = Number(snapshot.totalMarketValue || 0);
   const snapshotCurrency = String(snapshot.currency || 'CNY').toUpperCase();

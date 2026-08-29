@@ -868,6 +868,63 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.queryByText('60.00%')).not.toBeInTheDocument();
   });
 
+  it('hides concentration and exposure conclusions when any holding lacks a price', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      fxStale: false,
+      positions: [
+        makePosition({
+          symbol: '600519',
+          market: 'cn',
+          currency: 'CNY',
+          valuationCurrency: 'CNY',
+          marketValueBase: 6000,
+          priceAvailable: true,
+        }),
+        makePosition({
+          symbol: 'AAPL',
+          market: 'us',
+          currency: 'USD',
+          valuationCurrency: 'CNY',
+          lastPrice: 0,
+          marketValueBase: 0,
+          priceSource: 'missing',
+          priceDate: null,
+          priceStale: true,
+          priceAvailable: false,
+        }),
+      ],
+    }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      concentration: {
+        totalMarketValue: 6000,
+        topWeightPct: 100,
+        alert: true,
+        topPositions: [{ symbol: '600519', marketValueBase: 6000, weightPct: 100, isAlert: true }],
+      },
+      sectorConcentration: {
+        totalMarketValue: 6000,
+        topWeightPct: 100,
+        alert: true,
+        topSectors: [{ sector: '白酒', marketValueBase: 6000, weightPct: 100, symbolCount: 1, isAlert: true }],
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    for (const label of ['个股集中', '行业集中']) {
+      const flag = screen.getByText(label).closest('div.rounded-xl');
+      expect(flag).not.toBeNull();
+      expect(within(flag as HTMLElement).getByText('--')).toBeInTheDocument();
+      expect(within(flag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    }
+    expect(screen.getAllByText('暂无暴露数据')).toHaveLength(2);
+    expect(screen.queryByText('US')).not.toBeInTheDocument();
+    expect(screen.queryByText('100.00%')).not.toBeInTheDocument();
+  });
+
   it('uses nested account FX quality when the aggregate flag is incorrectly fresh', async () => {
     const snapshot = makeSnapshot({
       fxStale: false,
