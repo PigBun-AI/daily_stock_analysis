@@ -836,6 +836,38 @@ describe('PortfolioPage FX refresh', () => {
     expect(within(drawdownFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
   });
 
+  it('treats stale-FX concentration summaries as unavailable instead of authoritative', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: true }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      concentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 60,
+        alert: true,
+        topPositions: [{ symbol: '600519', marketValueBase: 6000, weightPct: 60, isAlert: true }],
+      },
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 70,
+        alert: true,
+        topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: true }],
+        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        errors: [],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    for (const label of ['个股集中', '行业集中']) {
+      const flag = screen.getByText(label).closest('div.rounded-xl');
+      expect(flag).not.toBeNull();
+      expect(within(flag as HTMLElement).getByText('--')).toBeInTheDocument();
+      expect(within(flag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    }
+    expect(screen.queryByText('Top1: 白酒')).not.toBeInTheDocument();
+    expect(screen.queryByText('60.00%')).not.toBeInTheDocument();
+  });
+
   it('marks price quality unavailable when the portfolio snapshot fails', async () => {
     getSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable'));
 
@@ -920,6 +952,7 @@ describe('PortfolioPage FX refresh', () => {
   });
 
   it('treats an all-UNCLASSIFIED sector result as unavailable and falls back to positions', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
     getRisk.mockResolvedValueOnce(makeRisk({
       concentration: {
         totalMarketValue: 10000,
@@ -961,6 +994,7 @@ describe('PortfolioPage FX refresh', () => {
   });
 
   it('treats partially covered sector risk as unavailable instead of presenting a subset as complete', async () => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
     getRisk.mockResolvedValueOnce(makeRisk({
       sectorConcentration: {
         totalMarketValue: 10000,

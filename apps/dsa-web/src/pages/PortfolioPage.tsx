@@ -253,16 +253,24 @@ function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
     && (sectorConcentration.errors || []).length === 0;
 }
 
-function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): PortfolioRiskAvailability {
+function getPortfolioRiskAvailability(
+  risk: PortfolioRiskResponse | null,
+  snapshot: PortfolioSnapshotResponse | null,
+): PortfolioRiskAvailability {
   const concentration = risk?.concentration;
   const sectorConcentration = risk?.sectorConcentration;
   const drawdown = risk?.drawdown;
   const stopLoss = risk?.stopLoss;
   const decisionSignalRisk = risk?.decisionSignalRisk;
 
+  const fxQualityAvailable = snapshot !== null && snapshot.fxStale === false;
+
   return {
-    concentration: hasNumberField(concentration, 'topWeightPct') && hasBooleanField(concentration, 'alert'),
-    sectorConcentration: hasNumberField(sectorConcentration, 'topWeightPct')
+    concentration: fxQualityAvailable
+      && hasNumberField(concentration, 'topWeightPct')
+      && hasBooleanField(concentration, 'alert'),
+    sectorConcentration: fxQualityAvailable
+      && hasNumberField(sectorConcentration, 'topWeightPct')
       && hasBooleanField(sectorConcentration, 'alert')
       && hasCompleteSectorCoverage(risk)
       && getClassifiedSectorRows(risk).length > 0,
@@ -338,7 +346,7 @@ function buildExposureRows(
 function buildPortfolioRiskFlags(
   risk: PortfolioRiskResponse | null,
   positions: FlatPosition[],
-  snapshotAvailable: boolean,
+  snapshot: PortfolioSnapshotResponse | null,
   text: RiskDashboardText,
 ): PortfolioRiskFlag[] {
   const missingPriceCount = positions.filter((position) => !hasPositionPrice(position)).length;
@@ -349,7 +357,8 @@ function buildPortfolioRiskFlags(
   const drawdown = risk?.drawdown;
   const stopLoss = risk?.stopLoss;
   const decisionSignalRisk = risk?.decisionSignalRisk;
-  const availability = getPortfolioRiskAvailability(risk);
+  const availability = getPortfolioRiskAvailability(risk, snapshot);
+  const snapshotAvailable = snapshot !== null;
   const defensiveSignalCount = availability.decisionSignalRisk ? (decisionSignalRisk?.total ?? 0) : 0;
 
   return [
@@ -824,10 +833,13 @@ const PortfolioPage: React.FC = () => {
     [snapshot],
   );
   const portfolioRiskFlags = useMemo(
-    () => buildPortfolioRiskFlags(risk, positionRows, snapshot !== null, riskDashboardText),
+    () => buildPortfolioRiskFlags(risk, positionRows, snapshot, riskDashboardText),
     [positionRows, risk, riskDashboardText, snapshot],
   );
-  const riskAvailability = useMemo(() => getPortfolioRiskAvailability(risk), [risk]);
+  const riskAvailability = useMemo(
+    () => getPortfolioRiskAvailability(risk, snapshot),
+    [risk, snapshot],
+  );
   const topClassifiedSector = useMemo(() => getClassifiedSectorRows(risk)[0], [risk]);
   const concentrationTopWeight = riskAvailability.sectorConcentration
     ? topClassifiedSector?.weightPct
