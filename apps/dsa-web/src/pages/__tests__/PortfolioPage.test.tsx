@@ -771,7 +771,7 @@ describe('PortfolioPage FX refresh', () => {
       expect(cardScope.getByText('--')).toBeInTheDocument();
     }
 
-    const concentrationCard = screen.getByText('行业集中度分布').closest('div.rounded-2xl');
+    const concentrationCard = screen.getByText('行业数据暂不可用，当前展示个股集中度').closest('div.rounded-2xl');
     expect(concentrationCard).not.toBeNull();
     const concentrationScope = within(concentrationCard as HTMLElement);
     expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
@@ -837,7 +837,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.queryByText('UNCLASSIFIED')).not.toBeInTheDocument();
   });
 
-  it('excludes UNCLASSIFIED from partially covered sector risk and uses the top classified row', async () => {
+  it('treats partially covered sector risk as unavailable instead of presenting a subset as complete', async () => {
     getRisk.mockResolvedValueOnce(makeRisk({
       sectorConcentration: {
         totalMarketValue: 10000,
@@ -868,17 +868,13 @@ describe('PortfolioPage FX refresh', () => {
 
     await waitForInitialLoad();
 
-    const dashboard = screen.getByText('风险与暴露看板').closest('section');
-    expect(dashboard).not.toBeNull();
-    const dashboardScope = within(dashboard as HTMLElement);
-    expect(dashboardScope.getByText('Top1: Technology')).toBeInTheDocument();
-    expect(dashboardScope.getByText('40.00%')).toBeInTheDocument();
-
-    const concentrationCard = screen.getByText('行业集中度分布').closest('div.rounded-2xl');
+    expect(screen.queryByText('Top1: Technology')).not.toBeInTheDocument();
+    expect(screen.queryByText('40.00%')).not.toBeInTheDocument();
+    const concentrationCard = screen.getByText('行业数据暂不可用，当前展示个股集中度').closest('div.rounded-2xl');
     expect(concentrationCard).not.toBeNull();
     const concentrationScope = within(concentrationCard as HTMLElement);
-    expect(concentrationScope.getByText('板块集中度告警: 否')).toBeInTheDocument();
-    expect(concentrationScope.getByText('Top1 权重: 40.00%')).toBeInTheDocument();
+    expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
+    expect(concentrationScope.getByText('Top1 权重: 0.00%')).toBeInTheDocument();
     expect(screen.queryByText('UNCLASSIFIED')).not.toBeInTheDocument();
   });
 

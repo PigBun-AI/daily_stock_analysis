@@ -238,6 +238,21 @@ function getClassifiedSectorRows(risk: PortfolioRiskResponse | null) {
   ));
 }
 
+function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
+  const sectorConcentration = risk?.sectorConcentration;
+  if (!sectorConcentration) return false;
+  const coverage = sectorConcentration.coverage || {};
+  const hasUnclassifiedRows = (sectorConcentration.topSectors || []).some((item) => (
+    item.sector.trim().toUpperCase() === UNCLASSIFIED_SECTOR
+      && Number.isFinite(Number(item.weightPct))
+      && Number(item.weightPct) > 0
+  ));
+  return !hasUnclassifiedRows
+    && Number(coverage.unclassifiedCount || 0) === 0
+    && Number(coverage.failedCount || 0) === 0
+    && (sectorConcentration.errors || []).length === 0;
+}
+
 function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): PortfolioRiskAvailability {
   const concentration = risk?.concentration;
   const sectorConcentration = risk?.sectorConcentration;
@@ -249,6 +264,7 @@ function getPortfolioRiskAvailability(risk: PortfolioRiskResponse | null): Portf
     concentration: hasNumberField(concentration, 'topWeightPct') && hasBooleanField(concentration, 'alert'),
     sectorConcentration: hasNumberField(sectorConcentration, 'topWeightPct')
       && hasBooleanField(sectorConcentration, 'alert')
+      && hasCompleteSectorCoverage(risk)
       && getClassifiedSectorRows(risk).length > 0,
     drawdown: hasNumberField(drawdown, 'currentDrawdownPct')
       && hasNumberField(drawdown, 'maxDrawdownPct')
@@ -920,6 +936,7 @@ const PortfolioPage: React.FC = () => {
   };
 
   const sectorPieData = useMemo(() => {
+    if (!riskAvailability.sectorConcentration) return [];
     return getClassifiedSectorRows(risk)
       .slice(0, 6)
       .map((item) => ({
@@ -927,7 +944,7 @@ const PortfolioPage: React.FC = () => {
         value: Number(item.weightPct || 0),
       }))
       .filter((item) => item.value > 0);
-  }, [risk]);
+  }, [risk, riskAvailability.sectorConcentration]);
 
   const positionFallbackPieData = useMemo(() => {
     if (!risk?.concentration?.topPositions?.length) {
