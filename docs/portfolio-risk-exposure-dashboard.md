@@ -28,7 +28,7 @@ Web 持仓页新增“风险与暴露看板”，放在组合总览指标和持�
 - 本次不新增后端字段，所有数据均来自既有 snapshot 和 risk 响应。
 - `/api/v1/portfolio/risk` 不可用或返回空风险块时，依赖服务端风险结果的旗标显示为“不可用”，不伪装成“正常”。
 - 个股集中度只有在 `topWeightPct`、block-level `alert`、数组 `topPositions` 以及至少一条带有效 symbol/正权重的 top row 同时存在时才可用；不得在显示 `Top1: --` 时宣称“正常”或“需处理”。`UNCLASSIFIED`、非数组 `topSectors`、无效行业标签、`coverage.unclassifiedCount`、`coverage.failedCount` 或行业错误表示行业分类覆盖不完整，不作为完整行业风险展示；两个 coverage counter 必须显式存在且为有限数值，缺字段也按不可用处理。全未分类、无效行或部分覆盖时，仅在个股集中度块自身完整可用时回退到个股饼图；个股集中度也缺字段时显示空态，避免把局部 `topPositions` 伪装成有效图表。行业风险 badge 与详情统一使用已校验的 block-level `sectorConcentration.alert`，不依赖可能缺失或不一致的 top-row `isAlert`。
-- 市场与币种暴露仅在当前作用域可稳定推断到账户基准币到快照币种的比例且 `snapshot.fxStale=false` 时展示；若处于“全部账户”且包含多种账户基准币、前端缺少逐账户已折算金额，暴露行降级为不可用。个股与行业集中度来自后端逐持仓折算结果，多基准币但 FX 新鲜时仍可展示；仅在 `snapshot.fxStale=true` 时降级，避免展示基于 stale/fallback 汇率的错误权重或告警。
+- 市场与币种暴露仅在当前作用域可稳定推断到账户基准币到快照币种的比例、`snapshot.fxStale=false` 且每个 `snapshot.accounts[].fxStale=false` 时展示；若处于“全部账户”且包含多种账户基准币、前端缺少逐账户已折算金额，暴露行降级为不可用。个股与行业集中度来自后端逐持仓折算结果，多基准币但 FX 新鲜时仍可展示；顶层或任一账户 FX stale 时均降级，避免 aggregate 未传播子账户质量时展示 fallback 1:1 产生的错误权重或告警。
 - 原有持仓明细、集中度饼图、回撤、止损、AI 风险小卡继续保留。
 - 价格质量只基于成功快照中的 `priceAvailable`、`priceSource` 和 `priceStale`，同一持仓只按“缺价或过期”计数一次，不额外请求行情；快照不可用时价格质量也显示“不可用”，不以空持仓误报为零问题。
 - 止损计数只有在当前作用域内每个持仓都显式满足 `priceAvailable=true` 时展示；任一持仓缺价都会让止损旗标和详情降级为“不可用”，避免把占位价 `0` 误报为触发止损。历史收盘价仍属于可用但可能过期的证据，其时效性由独立价格质量旗标披露。

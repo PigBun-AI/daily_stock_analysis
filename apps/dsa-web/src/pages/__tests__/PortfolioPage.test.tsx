@@ -868,6 +868,32 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.queryByText('60.00%')).not.toBeInTheDocument();
   });
 
+  it('uses nested account FX quality when the aggregate flag is incorrectly fresh', async () => {
+    const snapshot = makeSnapshot({
+      fxStale: false,
+      positions: [makePosition({ marketValueBase: 6000 })],
+    });
+    snapshot.accounts[0].fxStale = true;
+    getSnapshot.mockResolvedValueOnce(snapshot);
+    getRisk.mockResolvedValueOnce(makeRisk({
+      concentration: {
+        totalMarketValue: 6000,
+        topWeightPct: 100,
+        alert: true,
+        topPositions: [{ symbol: '600519', marketValueBase: 6000, weightPct: 100, isAlert: true }],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const concentrationFlag = screen.getByText('个股集中').closest('div.rounded-xl');
+    expect(concentrationFlag).not.toBeNull();
+    expect(within(concentrationFlag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(concentrationFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    expect(screen.getAllByText('暂无暴露数据')).toHaveLength(2);
+  });
+
   it('marks price quality unavailable when the portfolio snapshot fails', async () => {
     getSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable'));
 

@@ -230,6 +230,13 @@ function hasNumberField(value: unknown, field: string): value is Record<string, 
   return typeof value[field] === 'number' && Number.isFinite(value[field]);
 }
 
+function hasFreshFxEvidence(snapshot: PortfolioSnapshotResponse | null): boolean {
+  return snapshot !== null
+    && snapshot.fxStale === false
+    && Array.isArray(snapshot.accounts)
+    && snapshot.accounts.every((account) => account.fxStale === false);
+}
+
 function getValidTopPositionRows(risk: PortfolioRiskResponse | null) {
   const rows = risk?.concentration?.topPositions;
   if (!Array.isArray(rows)) return [];
@@ -288,7 +295,7 @@ function getPortfolioRiskAvailability(
   const stopLoss = risk?.stopLoss;
   const decisionSignalRisk = risk?.decisionSignalRisk;
 
-  const fxQualityAvailable = snapshot !== null && snapshot.fxStale === false;
+  const fxQualityAvailable = hasFreshFxEvidence(snapshot);
   const stopLossPriceQualityAvailable = snapshot !== null
     && Array.isArray(snapshot.accounts)
     && snapshot.accounts.every((account) => (
@@ -330,7 +337,7 @@ function buildExposureRows(
   groupBy: 'market' | 'currency',
 ): PortfolioExposureRow[] {
   if (!snapshot) return [];
-  if (snapshot.fxStale) return [];
+  if (!hasFreshFxEvidence(snapshot)) return [];
   const accounts = snapshot.accounts || [];
   const totalMarketValue = Number(snapshot.totalMarketValue || 0);
   const snapshotCurrency = String(snapshot.currency || 'CNY').toUpperCase();
