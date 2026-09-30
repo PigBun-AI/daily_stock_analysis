@@ -239,12 +239,19 @@ function hasFreshFxEvidence(snapshot: PortfolioSnapshotResponse | null): boolean
     && snapshot.accounts.every((account) => account.fxStale === false);
 }
 
+function hasUsablePositionQuote(position: PortfolioPositionItem): boolean {
+  return position.priceAvailable === true
+    && hasPositionPrice(position)
+    && Number.isFinite(position.lastPrice)
+    && position.lastPrice > 0;
+}
+
 function hasCompletePositionPriceCoverage(snapshot: PortfolioSnapshotResponse | null): boolean {
   return snapshot !== null
     && Array.isArray(snapshot.accounts)
     && snapshot.accounts.every((account) => (
       Array.isArray(account.positions)
-        && account.positions.every((position) => position.priceAvailable === true)
+        && account.positions.every(hasUsablePositionQuote)
     ));
 }
 
@@ -424,8 +431,8 @@ function buildPortfolioRiskFlags(
   snapshot: PortfolioSnapshotResponse | null,
   text: RiskDashboardText,
 ): PortfolioRiskFlag[] {
-  const missingPriceCount = positions.filter((position) => !hasPositionPrice(position)).length;
-  const stalePriceCount = positions.filter((position) => hasPositionPrice(position) && position.priceStale).length;
+  const missingPriceCount = positions.filter((position) => !hasUsablePositionQuote(position)).length;
+  const stalePriceCount = positions.filter((position) => hasUsablePositionQuote(position) && position.priceStale).length;
   const priceIssueCount = missingPriceCount + stalePriceCount;
   const concentration = risk?.concentration;
   const topPosition = getValidTopPositionRows(risk)[0];

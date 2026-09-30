@@ -960,8 +960,24 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.queryByText('60.00%')).not.toBeInTheDocument();
   });
 
-  it('hides concentration and exposure conclusions when any holding lacks a price', async () => {
-    getSnapshot.mockResolvedValueOnce(makeSnapshot({
+  it.each<{
+    priceAvailable?: boolean;
+    priceSource: string;
+    lastPrice: number;
+    separateAccount?: boolean;
+  }>([
+    { priceAvailable: false, priceSource: 'missing', lastPrice: 0 },
+    { priceAvailable: undefined, priceSource: 'missing', lastPrice: 0 },
+    { priceAvailable: undefined, priceSource: 'history_close', lastPrice: 1600 },
+    { priceAvailable: false, priceSource: 'history_close', lastPrice: 1600 },
+    { priceAvailable: true, priceSource: 'missing', lastPrice: 1600 },
+    { priceAvailable: true, priceSource: 'history_close', lastPrice: 0 },
+    { priceAvailable: true, priceSource: 'history_close', lastPrice: -1 },
+    { priceAvailable: true, priceSource: 'history_close', lastPrice: NaN },
+    { priceAvailable: true, priceSource: 'history_close', lastPrice: Infinity },
+    { priceAvailable: false, priceSource: 'missing', lastPrice: 0, separateAccount: true },
+  ])('hides concentration and exposure conclusions for an unusable quote: %j', async ({ separateAccount = false, ...quote }) => {
+    const snapshot = makeSnapshot({
       fxStale: false,
       positions: [
         makePosition({
@@ -977,15 +993,27 @@ describe('PortfolioPage FX refresh', () => {
           market: 'us',
           currency: 'USD',
           valuationCurrency: 'CNY',
-          lastPrice: 0,
           marketValueBase: 0,
-          priceSource: 'missing',
           priceDate: null,
           priceStale: true,
-          priceAvailable: false,
+          ...quote,
         }),
       ],
-    }));
+    });
+    snapshot.totalMarketValue = 6000;
+    snapshot.accounts[0].totalMarketValue = 6000;
+    if (separateAccount) {
+      const unpricedPosition = snapshot.accounts[0].positions.pop()!;
+      snapshot.accounts.push({
+        ...snapshot.accounts[0],
+        accountId: 2,
+        accountName: 'Account 2',
+        totalMarketValue: 0,
+        positions: [unpricedPosition],
+      });
+      snapshot.accountCount = 2;
+    }
+    getSnapshot.mockResolvedValueOnce(snapshot);
     getRisk.mockResolvedValueOnce(makeRisk({
       concentration: {
         totalMarketValue: 6000,
@@ -1001,6 +1029,12 @@ describe('PortfolioPage FX refresh', () => {
         coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
+      stopLoss: {
+        nearAlert: true,
+        triggeredCount: 1,
+        nearCount: 1,
+        items: [],
+      },
     }));
 
     render(<PortfolioPage />);
@@ -1015,6 +1049,55 @@ describe('PortfolioPage FX refresh', () => {
     expect(screen.getAllByText('暴露不可用')).toHaveLength(2);
     expect(screen.queryByText('US')).not.toBeInTheDocument();
     expect(screen.queryByText('100.00%')).not.toBeInTheDocument();
+    const concentrationCard = screen.getByText('行业数据暂不可用，当前展示个股集中度').closest('div.rounded-2xl');
+    expect(concentrationCard).not.toBeNull();
+    const concentrationScope = within(concentrationCard as HTMLElement);
+    expect(concentrationScope.getByText('暂无集中度数据')).toBeInTheDocument();
+    expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
+    expect(concentrationScope.getByText('Top1 权重: --')).toBeInTheDocument();
+    const priceFlag = screen.getByText('价格质量').closest('div.rounded-xl');
+    expect(priceFlag).not.toBeNull();
+    expect(within(priceFlag as HTMLElement).getByText('缺价: 1 · 过期价: 0')).toBeInTheDocument();
+    expect(within(priceFlag as HTMLElement).getByText('需处理')).toBeInTheDocument();
+    const stopLossFlag = screen.getByText('止损', { exact: true }).closest('div.rounded-xl');
+    expect(stopLossFlag).not.toBeNull();
+    expect(within(stopLossFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    const stopLossCard = screen.getByText('止损接近预警').closest('div.rounded-2xl');
+    expect(stopLossCard).not.toBeNull();
+    const stopLossScope = within(stopLossCard as HTMLElement);
+    expect(stopLossScope.getByText('触发数: --')).toBeInTheDocument();
+    expect(stopLossScope.getByText('接近数: --')).toBeInTheDocument();
+    expect(stopLossScope.getByText('告警: 不可用')).toBeInTheDocument();
+  });
+
+  it.each([false, true])('keeps genuine 100%% concentration available with a usable quote (stale: %s)', async (priceStale) => {
+    const snapshot = makeSnapshot({
+      fxStale: false,
+      positions: [makePosition({ priceStale })],
+    });
+    snapshot.totalMarketValue = 1600;
+    snapshot.accounts[0].totalMarketValue = 1600;
+    getSnapshot.mockResolvedValueOnce(snapshot);
+    getRisk.mockResolvedValueOnce(makeRisk({
+      concentration: {
+        totalMarketValue: 1600,
+        topWeightPct: 100,
+        alert: true,
+        topPositions: [{ symbol: '600519', marketValueBase: 1600, weightPct: 100, isAlert: true }],
+      },
+    }));
+
+    render(<PortfolioPage />);
+
+    await waitForInitialLoad();
+    const flag = screen.getByText('个股集中').closest('div.rounded-xl');
+    expect(flag).not.toBeNull();
+    const flagScope = within(flag as HTMLElement);
+    expect(flagScope.getByText('100.00%')).toBeInTheDocument();
+    expect(flagScope.getByText('Top1: 600519')).toBeInTheDocument();
+    expect(flagScope.getByText('需处理')).toBeInTheDocument();
+    expect(screen.getByText('Top1 权重: 100.00%')).toBeInTheDocument();
+    expect(screen.queryByText('暂无集中度数据')).not.toBeInTheDocument();
   });
 
   it('uses nested account FX quality when the aggregate flag is incorrectly fresh', async () => {
