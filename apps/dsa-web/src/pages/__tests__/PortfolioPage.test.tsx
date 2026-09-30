@@ -204,7 +204,7 @@ function makeRisk(overrides: Record<string, unknown> = {}) {
       topWeightPct: 0,
       alert: false,
       topSectors: [],
-      coverage: { unclassifiedCount: 0, failedCount: 0 },
+      coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
       errors: [],
     },
     drawdown: {
@@ -396,7 +396,7 @@ describe('PortfolioPage FX refresh', () => {
         topWeightPct: 70,
         alert: true,
         topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: true }],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
       drawdown: {
@@ -507,7 +507,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(dashboardScope.getAllByText('100.00%').length).toBeGreaterThan(0);
   });
 
-  it('hides exposure breakdowns when all-account totals mix base currencies without per-account converted values', async () => {
+  it('converts mixed CNY and USD accounts using per-account aggregate market values', async () => {
     getSnapshot.mockResolvedValueOnce({
       asOf: '2026-03-19',
       costMethod: 'fifo' as const,
@@ -564,6 +564,7 @@ describe('PortfolioPage FX refresh', () => {
           costMethod: 'fifo' as const,
           totalCash: 0,
           totalMarketValue: 100,
+          totalMarketValueAggregate: 700,
           totalEquity: 100,
           realizedPnl: 0,
           unrealizedPnl: 0,
@@ -592,7 +593,98 @@ describe('PortfolioPage FX refresh', () => {
     const dashboard = screen.getByText('风险与暴露看板').closest('section');
     expect(dashboard).not.toBeNull();
     const dashboardScope = within(dashboard as HTMLElement);
-    expect(dashboardScope.getAllByText('暂无暴露数据')).toHaveLength(2);
+    for (const label of ['市场暴露', '币种暴露']) {
+      const exposure = dashboardScope.getByText(label).closest('div.rounded-xl');
+      const scope = within(exposure as HTMLElement);
+      expect(scope.getByText('CNY 70.00')).toBeInTheDocument();
+      expect(scope.getByText('CNY 700.00')).toBeInTheDocument();
+      expect(scope.getByText('9.09%')).toBeInTheDocument();
+      expect(scope.getByText('90.91%')).toBeInTheDocument();
+      expect(scope.queryByText('CNY 100.00')).not.toBeInTheDocument();
+    }
+    expect(dashboardScope.queryByText('暴露不可用')).not.toBeInTheDocument();
+  });
+
+  it.each(['fresh', 'stale', 'missing', 'zero-value-account'] as const)('handles three account valuation currencies with %s conversion evidence', async (evidence) => {
+    const snapshot = makeSnapshot({ fxStale: false });
+    const specs = [
+      { currency: 'CNY', market: 'cn', symbol: '600519', raw: 70, converted: 70 },
+      { currency: 'USD', market: 'us', symbol: 'AAPL', raw: 100, converted: 700 },
+      { currency: 'HKD', market: 'hk', symbol: 'HK00700', raw: 200, converted: 180 },
+    ];
+    const accounts = specs.map((item, index) => ({
+      ...snapshot.accounts[0],
+      accountId: index + 1,
+      baseCurrency: item.currency,
+      totalMarketValue: item.raw,
+      totalMarketValueAggregate: evidence === 'missing' && index === 1 ? undefined : item.converted,
+      fxStale: evidence === 'stale' && index === 1,
+      positions: [makePosition({
+        symbol: item.symbol, market: item.market, currency: item.currency,
+        valuationCurrency: item.currency, marketValueBase: item.raw,
+      })],
+    }));
+    if (evidence === 'zero-value-account') {
+      accounts.push({
+        ...accounts[2], accountId: 4, totalMarketValue: 0, totalMarketValueAggregate: 0,
+        positions: [makePosition({
+          symbol: 'HK09988', market: 'hk', currency: 'HKD', valuationCurrency: 'HKD', marketValueBase: 0,
+        })],
+      });
+    }
+    getSnapshot.mockResolvedValueOnce({ ...snapshot, accounts, accountCount: accounts.length, totalMarketValue: 950 });
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    const dashboard = within(screen.getByText('风险与暴露看板').closest('section') as HTMLElement);
+    if (evidence === 'stale' || evidence === 'missing') {
+      expect(dashboard.getAllByText('暴露不可用')).toHaveLength(2);
+      expect(dashboard.queryByText('73.68%')).not.toBeInTheDocument();
+      return;
+    }
+    for (const label of ['市场暴露', '币种暴露']) {
+      const exposure = within(dashboard.getByText(label).closest('div.rounded-xl') as HTMLElement);
+      for (const value of ['CNY 700.00', 'CNY 180.00', 'CNY 70.00', '73.68%', '18.95%', '7.37%']) {
+        expect(exposure.getByText(value)).toBeInTheDocument();
+      }
+      if (evidence === 'zero-value-account') {
+        expect(exposure.getByText('持仓 2')).toBeInTheDocument();
+      }
+    }
+  });
+
+  it.each([NaN, Infinity, -1, undefined])('does not hide invalid position valuation %s in otherwise complete exposure', async (marketValueBase) => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({
+      fxStale: false,
+      positions: [makePosition(), makePosition({ symbol: 'AAPL', market: 'us', marketValueBase })],
+    }));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    const dashboard = within(screen.getByText('风险与暴露看板').closest('section') as HTMLElement);
+    expect(dashboard.getAllByText('暴露不可用')).toHaveLength(2);
+  });
+
+  it('distinguishes an empty portfolio from unavailable exposure', async () => {
+    const snapshot = makeSnapshot({ fxStale: false });
+    getSnapshot.mockResolvedValueOnce({
+      ...snapshot, totalMarketValue: 0, totalEquity: 1000,
+      accounts: [{ ...snapshot.accounts[0], totalMarketValue: 0, totalEquity: 1000 }],
+    });
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    const dashboard = within(screen.getByText('风险与暴露看板').closest('section') as HTMLElement);
+    expect(dashboard.getAllByText('暂无暴露数据')).toHaveLength(2);
+    expect(dashboard.queryByText('暴露不可用')).not.toBeInTheDocument();
+  });
+
+  it('labels unavailable exposure in English when FX evidence is stale', async () => {
+    renderEnglishPage();
+    await waitForInitialLoad();
+    const dashboard = within(screen.getByText('Risk and exposure dashboard').closest('section') as HTMLElement);
+    expect(dashboard.getAllByText('Exposure unavailable')).toHaveLength(2);
+    expect(dashboard.queryByText('No exposure data')).not.toBeInTheDocument();
   });
 
   it('hides exposure breakdowns when positions mix valuation currencies under one aggregate snapshot', async () => {
@@ -658,7 +750,7 @@ describe('PortfolioPage FX refresh', () => {
     const dashboard = screen.getByText('风险与暴露看板').closest('section');
     expect(dashboard).not.toBeNull();
     const dashboardScope = within(dashboard as HTMLElement);
-    expect(dashboardScope.getAllByText('暂无暴露数据')).toHaveLength(2);
+    expect(dashboardScope.getAllByText('暴露不可用')).toHaveLength(2);
   });
 
   it('renders every market exposure group instead of silently dropping the remainder', async () => {
@@ -705,7 +797,7 @@ describe('PortfolioPage FX refresh', () => {
     const dashboard = screen.getByText('风险与暴露看板').closest('section');
     expect(dashboard).not.toBeNull();
     const dashboardScope = within(dashboard as HTMLElement);
-    expect(dashboardScope.getAllByText('暂无暴露数据')).toHaveLength(2);
+    expect(dashboardScope.getAllByText('暴露不可用')).toHaveLength(2);
     expect(dashboardScope.queryByText('CNY 100.00')).not.toBeInTheDocument();
     expect(dashboardScope.queryByText('100.00%')).not.toBeInTheDocument();
   });
@@ -850,7 +942,7 @@ describe('PortfolioPage FX refresh', () => {
         topWeightPct: 70,
         alert: true,
         topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: true }],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
     }));
@@ -906,7 +998,7 @@ describe('PortfolioPage FX refresh', () => {
         topWeightPct: 100,
         alert: true,
         topSectors: [{ sector: '白酒', marketValueBase: 6000, weightPct: 100, symbolCount: 1, isAlert: true }],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
     }));
@@ -920,7 +1012,7 @@ describe('PortfolioPage FX refresh', () => {
       expect(within(flag as HTMLElement).getByText('--')).toBeInTheDocument();
       expect(within(flag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
     }
-    expect(screen.getAllByText('暂无暴露数据')).toHaveLength(2);
+    expect(screen.getAllByText('暴露不可用')).toHaveLength(2);
     expect(screen.queryByText('US')).not.toBeInTheDocument();
     expect(screen.queryByText('100.00%')).not.toBeInTheDocument();
   });
@@ -948,7 +1040,7 @@ describe('PortfolioPage FX refresh', () => {
     expect(concentrationFlag).not.toBeNull();
     expect(within(concentrationFlag as HTMLElement).getByText('--')).toBeInTheDocument();
     expect(within(concentrationFlag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
-    expect(screen.getAllByText('暂无暴露数据')).toHaveLength(2);
+    expect(screen.getAllByText('暴露不可用')).toHaveLength(2);
   });
 
   it('marks price quality unavailable when the portfolio snapshot fails', async () => {
@@ -975,7 +1067,7 @@ describe('PortfolioPage FX refresh', () => {
         totalMarketValue: 10000,
         topWeightPct: 70,
         topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: true }],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       } as never,
       drawdown: {
@@ -1054,7 +1146,7 @@ describe('PortfolioPage FX refresh', () => {
           symbolCount: 2,
           isAlert: true,
         }],
-        coverage: { classifiedCount: 0, unclassifiedCount: 2 },
+        coverage: { classifiedCount: 0, unclassifiedCount: 2, failedCount: 0 },
         errors: [],
       },
     }));
@@ -1099,7 +1191,7 @@ describe('PortfolioPage FX refresh', () => {
             isAlert: false,
           },
         ],
-        coverage: { classifiedCount: 1, unclassifiedCount: 2 },
+        coverage: { classifiedCount: 1, unclassifiedCount: 2, failedCount: 0 },
         errors: [],
       },
     }));
@@ -1116,6 +1208,34 @@ describe('PortfolioPage FX refresh', () => {
     expect(concentrationScope.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
     expect(concentrationScope.getByText('Top1 权重: --')).toBeInTheDocument();
     expect(screen.queryByText('UNCLASSIFIED')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { classifiedCount: 0, unclassifiedCount: 0, failedCount: 0, errors: [] },
+    { classifiedCount: undefined, unclassifiedCount: 0, failedCount: 0, errors: [] },
+    { classifiedCount: 1, unclassifiedCount: 1, failedCount: 0, errors: [] },
+    { classifiedCount: 1, unclassifiedCount: 0, failedCount: 1, errors: [] },
+    { classifiedCount: 1, unclassifiedCount: 0, failedCount: 0, errors: ['classification failed'] },
+  ])('marks sector risk unavailable for incomplete classification evidence: %j', async ({ errors, ...coverage }) => {
+    getSnapshot.mockResolvedValueOnce(makeSnapshot({ fxStale: false }));
+    getRisk.mockResolvedValueOnce(makeRisk({
+      sectorConcentration: {
+        totalMarketValue: 10000,
+        topWeightPct: 100,
+        alert: true,
+        topSectors: [{ sector: 'Technology', marketValueBase: 10000, weightPct: 100, symbolCount: 1, isAlert: true }],
+        coverage,
+        errors,
+      },
+    }));
+
+    render(<PortfolioPage />);
+    await waitForInitialLoad();
+    const flag = screen.getByText('行业集中').closest('div.rounded-xl');
+    expect(within(flag as HTMLElement).getByText('--')).toBeInTheDocument();
+    expect(within(flag as HTMLElement).getAllByText('不可用')).toHaveLength(2);
+    expect(screen.getByText('板块集中度告警: 不可用')).toBeInTheDocument();
+    expect(screen.queryByText('Top1: Technology')).not.toBeInTheDocument();
   });
 
   it('requires explicit sector coverage counters before declaring sector risk available', async () => {
@@ -1149,7 +1269,7 @@ describe('PortfolioPage FX refresh', () => {
         topWeightPct: 70,
         alert: false,
         topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: false }],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
       } as never,
     }));
 
@@ -1176,7 +1296,7 @@ describe('PortfolioPage FX refresh', () => {
           symbolCount: 2,
           isAlert: false,
         } as never],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
     }));
@@ -1204,7 +1324,7 @@ describe('PortfolioPage FX refresh', () => {
           symbolCount: 2,
           isAlert: true,
         } as never],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
     }));
@@ -1226,7 +1346,7 @@ describe('PortfolioPage FX refresh', () => {
         topWeightPct: 70,
         alert: true,
         topSectors: { sector: 'Technology', weightPct: 70 } as never,
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
     }));
@@ -1298,7 +1418,7 @@ describe('PortfolioPage FX refresh', () => {
         topWeightPct: 70,
         alert: true,
         topSectors: [{ sector: '白酒', marketValueBase: 7000, weightPct: 70, symbolCount: 2, isAlert: false }],
-        coverage: { unclassifiedCount: 0, failedCount: 0 },
+        coverage: { classifiedCount: 2, unclassifiedCount: 0, failedCount: 0 },
         errors: [],
       },
     }));

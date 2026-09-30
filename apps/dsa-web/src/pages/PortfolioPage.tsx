@@ -126,6 +126,7 @@ const PORTFOLIO_RISK_DASHBOARD_TEXT = {
     marketExposure: '市场暴露',
     currencyExposure: '币种暴露',
     noExposure: '暂无暴露数据',
+    exposureUnavailable: '暴露不可用',
     concentration: '个股集中',
     sector: '行业集中',
     drawdown: '回撤',
@@ -150,6 +151,7 @@ const PORTFOLIO_RISK_DASHBOARD_TEXT = {
     marketExposure: 'Market exposure',
     currencyExposure: 'Currency exposure',
     noExposure: 'No exposure data',
+    exposureUnavailable: 'Exposure unavailable',
     concentration: 'Position concentration',
     sector: 'Sector concentration',
     drawdown: 'Drawdown',
@@ -277,7 +279,8 @@ function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
   if (!Array.isArray(sectorConcentration.errors)) return false;
   const coverage = sectorConcentration.coverage || {};
   if (
-    !hasNumberField(coverage, 'unclassifiedCount')
+    !hasNumberField(coverage, 'classifiedCount')
+    || !hasNumberField(coverage, 'unclassifiedCount')
     || !hasNumberField(coverage, 'failedCount')
   ) return false;
   const hasUnclassifiedRows = (sectorConcentration.topSectors || []).some((item) => (
@@ -295,6 +298,7 @@ function hasCompleteSectorCoverage(risk: PortfolioRiskResponse | null) {
   ));
   return !hasUnclassifiedRows
     && !hasInvalidRows
+    && coverage.classifiedCount > 0
     && coverage.unclassifiedCount === 0
     && coverage.failedCount === 0
     && sectorConcentration.errors.length === 0;
@@ -351,6 +355,7 @@ function buildExposureRows(
   if (!hasCompletePositionPriceCoverage(snapshot)) return [];
   const accounts = snapshot.accounts || [];
   const totalMarketValue = Number(snapshot.totalMarketValue || 0);
+  if (!Number.isFinite(totalMarketValue) || totalMarketValue <= 0) return [];
   const snapshotCurrency = String(snapshot.currency || 'CNY').toUpperCase();
   const rawPortfolioValue = accounts.reduce(
     (sum, account) => sum + sumPositionMarketValue(account.positions || []),
@@ -359,13 +364,14 @@ function buildExposureRows(
   const valuationCurrencies = new Set<string>();
   for (const account of accounts) {
     for (const position of account.positions || []) {
-      const rawValue = Number(position.marketValueBase || 0);
-      if (!Number.isFinite(rawValue) || rawValue === 0) continue;
+      const rawValue = position.marketValueBase;
+      if (typeof rawValue !== 'number' || !Number.isFinite(rawValue) || rawValue < 0) return [];
+      if (rawValue === 0) continue;
       const valuationCurrency = String(position.valuationCurrency || account.baseCurrency || snapshotCurrency).toUpperCase();
       valuationCurrencies.add(valuationCurrency);
     }
   }
-  if (valuationCurrencies.size > 1) return [];
+  const mixedValuationCurrencies = valuationCurrencies.size > 1;
   const [valuationCurrency = snapshotCurrency] = Array.from(valuationCurrencies);
   const scale = valuationCurrency === snapshotCurrency
     ? 1
@@ -376,10 +382,26 @@ function buildExposureRows(
 
   const groups = new Map<string, { value: number; count: number }>();
   for (const account of accounts) {
+    let accountScale = scale;
+    if (mixedValuationCurrencies) {
+      const baseCurrency = String(account.baseCurrency).toUpperCase();
+      const rawValue = sumPositionMarketValue(account.positions || []);
+      if (rawValue === 0 && account.positions.length === 0) continue;
+      if (account.positions.some((position) => (
+        String(position.valuationCurrency || baseCurrency).toUpperCase() !== baseCurrency
+      ))) return [];
+      const convertedValue = baseCurrency === snapshotCurrency
+        ? rawValue
+        : account.totalMarketValueAggregate;
+      if (typeof convertedValue !== 'number' || !Number.isFinite(convertedValue)
+        || convertedValue < 0) return [];
+      if (rawValue === 0 && convertedValue !== 0) return [];
+      accountScale = rawValue > 0 ? convertedValue / rawValue : 0;
+    }
     for (const position of account.positions || []) {
       const key = String(groupBy === 'market' ? position.market : position.currency || position.valuationCurrency || 'unknown').toUpperCase();
       const current = groups.get(key) ?? { value: 0, count: 0 };
-      current.value += Number(position.marketValueBase || 0) * scale;
+      current.value += Number(position.marketValueBase || 0) * accountScale;
       current.count += 1;
       groups.set(key, current);
     }
@@ -879,6 +901,9 @@ const PortfolioPage: React.FC = () => {
     return rows;
   }, [snapshot]);
   const exposureTotal = snapshot?.totalMarketValue || 0;
+  const exposureEmptyLabel = snapshot !== null && positionRows.length === 0 && hasFreshFxEvidence(snapshot)
+    ? riskDashboardText.noExposure
+    : riskDashboardText.exposureUnavailable;
   const marketExposureRows = useMemo(
     () => buildExposureRows(snapshot, 'market'),
     [snapshot],
@@ -1631,14 +1656,14 @@ const PortfolioPage: React.FC = () => {
                 title={riskDashboardText.marketExposure}
                 rows={marketExposureRows}
                 currency={snapshot?.currency || 'CNY'}
-                emptyLabel={riskDashboardText.noExposure}
+                emptyLabel={exposureEmptyLabel}
                 positionLabel={riskDashboardText.positions}
               />
               <PortfolioExposureList
                 title={riskDashboardText.currencyExposure}
                 rows={currencyExposureRows}
                 currency={snapshot?.currency || 'CNY'}
-                emptyLabel={riskDashboardText.noExposure}
+                emptyLabel={exposureEmptyLabel}
                 positionLabel={riskDashboardText.positions}
               />
             </div>
