@@ -94,6 +94,46 @@ class AlertApiTestCase(unittest.TestCase):
         self.assertEqual(resp.status_code, 200, resp.text)
         return resp.json()
 
+    def test_legacy_source_counts_follow_worker_dedup_and_db_deletion(self) -> None:
+        legacy = {"stock_code": "000001", "alert_type": "price_cross", "direction": "above", "price": 10}
+        config = SimpleNamespace(agent_event_alert_rules_json=json.dumps([legacy]))
+        with patch("api.v1.endpoints.alerts.get_config", return_value=config):
+            initial = self.client.get("/api/v1/alerts/rules").json()
+            self.assertEqual(initial["total"], 0)
+            self.assertEqual(initial["rule_sources"], {"legacy_configured": 1, "legacy_effective": 1})
+            created = self.client.post("/api/v1/alerts/rules", json={
+                "target": "000001", "alert_type": "price_cross",
+                "parameters": {"direction": "above", "price": 10},
+            }).json()
+            rule_id = created["id"]
+            # Source counts describe the unfiltered runtime, not this page.
+            shadowed = self.client.get("/api/v1/alerts/rules?enabled=false").json()
+            self.assertEqual(shadowed["total"], 0)
+            self.assertEqual(shadowed["rule_sources"], {"legacy_configured": 1, "legacy_effective": 0})
+            self.client.post(f"/api/v1/alerts/rules/{rule_id}/disable")
+            self.assertEqual(self.client.get("/api/v1/alerts/rules").json()["rule_sources"]["legacy_effective"], 1)
+            self.client.delete(f"/api/v1/alerts/rules/{rule_id}")
+            final = self.client.get("/api/v1/alerts/rules").json()
+            self.assertEqual(final["total"], 0)
+            self.assertEqual(final["rule_sources"], initial["rule_sources"])
+
+    def test_legacy_source_counts_validate_and_deduplicate_config_entries(self) -> None:
+        legacy = {"stock_code": "000001", "alert_type": "price_cross", "direction": "above", "price": 10}
+        for raw, configured, effective in (
+            ("", 0, 0),
+            ("not-json", 0, 0),
+            (json.dumps([legacy, legacy, {**legacy, "price": -1}]), 2, 1),
+        ):
+            with self.subTest(raw=raw), patch(
+                "api.v1.endpoints.alerts.get_config",
+                return_value=SimpleNamespace(agent_event_alert_rules_json=raw),
+            ):
+                response = self.client.get("/api/v1/alerts/rules")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["rule_sources"], {
+                    "legacy_configured": configured, "legacy_effective": effective,
+                })
+
     def test_rule_crud_enable_disable_and_delete(self) -> None:
         created = self._create_rule()
         rule_id = created["id"]

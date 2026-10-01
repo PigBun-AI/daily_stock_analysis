@@ -200,6 +200,12 @@ class AlertWorker:
 
         return stats
 
+    def get_rule_sources(self, config: Any) -> Dict[str, int]:
+        """Describe legacy inputs using the same validation and dedup as polling."""
+        configured = len(self._load_legacy_rules(config))
+        effective = sum(rule.source == "legacy_env" for rule in self._load_runtime_rules(config)) if configured else 0
+        return {"legacy_configured": configured, "legacy_effective": effective}
+
     def _load_runtime_rules(self, config: Any) -> List[RuntimeAlertRule]:
         runtime_rules: List[RuntimeAlertRule] = []
         seen_keys = set()

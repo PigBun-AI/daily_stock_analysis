@@ -23,6 +23,12 @@
 
 ## Legacy 配置兼容
 
+规则列表现在返回只读 `rule_sources`：`legacy_configured` 为校验通过的环境规则条目数，`legacy_effective` 为与启用数据库规则按后台 worker 原有逻辑去重后的环境规则数。它描述未筛选的配置加载结果，不代表轮询已启动；重复环境条目可能计入前者，但只计入后者一次。无效条目沿用 worker 的跳过规则。
+
+Web 检测到有效环境规则时始终显示来源提示，即使数据库列表为空或环境规则当前全部被同条件的启用数据库规则覆盖。页面删除、禁用只操作数据库，不修改环境规则；禁用或删除数据库规则后，同条件环境规则可能重新参与轮询。需要停用环境规则时，在实际部署配置中修改 `AGENT_EVENT_ALERT_RULES_JSON` 并重新加载配置。本次不自动迁移配置，也不改变执行、冷却或推送语义。
+
+视觉回归：在既有 Web smoke 环境下运行 `npx playwright test e2e/alerts-sources.spec.ts`，使用受控 API 响应验收数据库空列表时的桌面/窄屏提示并生成 `test-results/**/alerts-sources-*.png`。此测试验证 UI，不替代后台真实配置加载回归；专题文档没有英文对应版本。
+
 `AGENT_EVENT_ALERT_RULES_JSON` 作为 legacy 运行时规则来源继续保留，不自动迁移、删除、覆盖或改写用户已有 `.env` / Web 配置。
 
 - 空字符串或空数组表示未配置 legacy 规则；schedule 模式仍会注册后台 worker，以便后续 API 创建的持久化 active rules 无需重启即可被评估。
