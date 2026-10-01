@@ -201,19 +201,23 @@ class AlertWorker:
         return stats
 
     def get_rule_sources(self, config: Any) -> Dict[str, int]:
-        """Describe legacy inputs using the same validation and dedup as polling."""
+        """Reuse polling validation and dedup without live quotes or portfolio writes."""
         configured = len(self._load_legacy_rules(config))
-        effective = sum(rule.source == "legacy_env" for rule in self._load_runtime_rules(config)) if configured else 0
+        effective = sum(
+            rule.source == "legacy_env" for rule in self._load_runtime_rules(config, read_only=True)
+        ) if configured else 0
         return {"legacy_configured": configured, "legacy_effective": effective}
 
-    def _load_runtime_rules(self, config: Any) -> List[RuntimeAlertRule]:
+    def _load_runtime_rules(self, config: Any, *, read_only: bool = False) -> List[RuntimeAlertRule]:
         runtime_rules: List[RuntimeAlertRule] = []
         seen_keys = set()
 
         for row in self.service.repo.list_enabled_rules(limit=ALERT_WORKER_RULE_LIMIT):
             try:
                 cooldown_policy = self.service._load_json(row.cooldown_policy, default=None)
-                for payload in self.service.build_runtime_payloads(row, config=config, include_overflow_payload=False):
+                for payload in self.service.build_runtime_payloads(
+                    row, config=config, include_overflow_payload=False, read_only=read_only,
+                ):
                     if len(runtime_rules) >= ALERT_WORKER_RULE_LIMIT:
                         logger.warning(
                             "[AlertWorker] Runtime rule limit reached at %s; skipping remaining expanded rules",

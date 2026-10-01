@@ -1007,6 +1007,7 @@ class AlertService:
         *,
         config: Optional[Any] = None,
         include_overflow_payload: bool = True,
+        read_only: bool = False,
     ) -> List[RuntimeAlertPayload]:
         data = self._serialize_rule_base(row)
         parent_key = self._semantic_key(
@@ -1032,6 +1033,7 @@ class AlertService:
                     target_scope=data["target_scope"],
                     target=data["target"],
                     config=config,
+                    read_only=read_only,
                 )
             except Exception as exc:
                 return [

@@ -26,9 +26,14 @@ import src.auth as auth
 from api.app import create_app
 from src.config import Config
 from src.repositories.alert_repo import AlertRepository
+from src.repositories.portfolio_repo import PortfolioRepository
 from src.services.alert_service import AlertService
+from src.services.alert_worker import AlertWorker
 from src.services.portfolio_service import PortfolioService
-from src.storage import AlertCooldownRecord, AlertNotificationRecord, AlertTriggerRecord, Base, DatabaseManager
+from src.storage import (
+    AlertCooldownRecord, AlertNotificationRecord, AlertTriggerRecord, Base, DatabaseManager,
+    PortfolioDailySnapshot, PortfolioPosition, PortfolioPositionLot,
+)
 
 
 def _reset_auth_globals() -> None:
@@ -133,6 +138,71 @@ class AlertApiTestCase(unittest.TestCase):
                 self.assertEqual(response.json()["rule_sources"], {
                     "legacy_configured": configured, "legacy_effective": effective,
                 })
+
+    def test_legacy_sources_replay_real_holdings_without_quotes_or_writes(self) -> None:
+        portfolio = PortfolioService()
+        account = portfolio.create_account(name="Sources", broker=None, market="us", base_currency="USD")
+        account_id = account["id"]
+        portfolio.record_trade(
+            account_id=account_id, symbol="AAPL", trade_date=date.today(), side="buy", quantity=2, price=10,
+        )
+        portfolio.record_trade(
+            account_id=account_id, symbol="MSFT", trade_date=date.today(), side="buy", quantity=1, price=20,
+        )
+        self._create_rule({"target": "000001", "parameters": {"direction": "above", "price": 10}})
+        self._create_rule({"target_scope": "watchlist", "target": "default"})
+        self._create_rule({"target_scope": "portfolio_holdings", "target": str(account_id)})
+        legacy = {"stock_code": "000001", "alert_type": "price_cross", "direction": "above", "price": 10}
+        config = SimpleNamespace(
+            agent_event_monitor_enabled=False,
+            agent_event_alert_rules_json=json.dumps([legacy, legacy]),
+            stock_list=["000001", "AAPL", "MSFT"],
+        )
+
+        def stored_state():
+            with self.db.get_session() as session:
+                return [
+                    session.execute(model.__table__.select().order_by(model.id)).all()
+                    for model in (PortfolioPosition, PortfolioPositionLot, PortfolioDailySnapshot)
+                ]
+
+        # Test both an unreplayed ledger and populated caches. A cached-position
+        # shortcut would miss the holdings entirely in the first case.
+        for seed_cache in (False, True):
+            if seed_cache:
+                portfolio.get_portfolio_snapshot(account_id=account_id, include_realtime=False)
+            before = stored_state()
+            self.assertEqual([len(rows) for rows in before], [2, 2, 1] if seed_cache else [0, 0, 0])
+            # Only guard the actual I/O boundaries; use real services, ledger replay,
+            # expansion, repository ordering and database reads throughout.
+            with patch("api.v1.endpoints.alerts.get_config", return_value=config), patch.object(
+                PortfolioService, "_fetch_realtime_position_price", side_effect=AssertionError("unexpected live quote"),
+            ) as quote, patch.object(
+                PortfolioRepository, "replace_positions_lots_and_snapshot", autospec=True,
+                side_effect=PortfolioRepository.replace_positions_lots_and_snapshot,
+            ) as write, patch("src.services.portfolio_alerts.EXPANDED_TARGET_SOFT_CAP", 2):
+                # The two holdings and two capped watchlist targets consume four
+                # slots before the older single-symbol rule can shadow the legacy.
+                for limit, effective in ((1, 1), (2, 1), (3, 1), (4, 1), (5, 0)):
+                    with self.subTest(limit=limit), patch("src.services.alert_worker.ALERT_WORKER_RULE_LIMIT", limit):
+                        for monitor_enabled in (False, True):
+                            config.agent_event_monitor_enabled = monitor_enabled
+                            for query in ("", "?enabled=false", "?page=2&page_size=1", "?target_scope=single_symbol"):
+                                response = self.client.get(f"/api/v1/alerts/rules{query}")
+                                self.assertEqual(response.status_code, 200, response.text)
+                                self.assertEqual(response.json()["rule_sources"], {
+                                    "legacy_configured": 2, "legacy_effective": effective,
+                                })
+                quote.assert_not_called()
+                write.assert_not_called()
+                self.assertEqual(stored_state(), before)
+
+        # Background loading retains its live quote and snapshot persistence.
+        with patch.object(PortfolioService, "_fetch_realtime_position_price", return_value=(30.0, "test")) as quote:
+            runtime = AlertWorker()._load_runtime_rules(config)
+        self.assertEqual(sum(rule.source == "legacy_env" for rule in runtime), 0)
+        self.assertEqual({call.args[0] for call in quote.call_args_list}, {"AAPL", "MSFT"})
+        self.assertNotEqual(stored_state(), before)
 
     def test_rule_crud_enable_disable_and_delete(self) -> None:
         created = self._create_rule()
