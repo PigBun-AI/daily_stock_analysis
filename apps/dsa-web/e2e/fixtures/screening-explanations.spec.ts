@@ -68,7 +68,8 @@ for (const state of ['complete', 'local-only', 'inferred', 'awaiting-evidence'] 
     const run = page.getByRole('button', { name: '运行选股', exact: true });
     await expect(run).toBeEnabled();
     await run.click();
-    await page.getByRole('button', { name: '展开查看', exact: true }).click();
+    // The first candidate is expanded automatically when a task completes.
+    await expect(page.getByRole('button', { name: '收起', exact: true })).toBeVisible();
     const selected = page.getByText('为什么入选', { exact: true }).locator('..');
     const now = page.getByText('为什么现在', { exact: true }).locator('..');
     await expect(selected).toBeVisible();
