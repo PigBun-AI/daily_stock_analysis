@@ -35,3 +35,10 @@ Web 首页的自选股列表按单行聚合展示每只股票的当前处理状�
 - 接入实时涨跌幅后，`变化` 可从“是否有报告”升级为“价格变化 + 观点变化”。
 - 接入 ResearchArtifact 后，`状态` 可展示 thesis 是否被触发或失效。
 - 接入实体跳转模型后，`下一步` 可升级为可执行动作，如打开研报工作台、创建监控或加入组合。
+
+## 浏览器验收
+
+`cd apps/dsa-web && npx playwright install chromium && npx playwright test --config playwright.fixture.config.ts`
+加载真实 HomeStockWorkspace 和样式，以确定性 props 覆盖今日有报告、无报告和 processing 行。
+900px、1280px 视口分别使用首页的 256px、288px 侧栏宽度，另覆盖 390px 窄屏；验证信号可见、无横向溢出、读屏说明和待分析计数。
+GitHub web-gate 将截图上传到 `web-ui-evidence-<head SHA>` artifact，截图不入库。
