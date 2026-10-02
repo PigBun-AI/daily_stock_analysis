@@ -151,6 +151,16 @@ describe('SidebarNav', () => {
     expect(link).toHaveClass('font-medium');
   });
 
+  it('keeps rail controls outside the scrollable navigation links', () => {
+    render(<MemoryRouter><SidebarNav variant="rail" /></MemoryRouter>);
+
+    const nav = screen.getByRole('navigation', { name: '主导航' });
+    expect(nav).toHaveClass('min-h-0', 'overflow-y-auto');
+    expect(nav).not.toContainElement(screen.getByRole('button', { name: '退出' }));
+    expect(nav).not.toContainElement(screen.getByRole('button', { name: '切换主题' }));
+    expect(screen.getByRole('link', { name: '设置' })).toHaveClass('shrink-0');
+  });
+
   it('opens the logout confirmation and confirms logout', async () => {
     render(
       <MemoryRouter initialEntries={['/chat']}>

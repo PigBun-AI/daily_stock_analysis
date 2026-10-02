@@ -91,3 +91,40 @@ for (const state of ['partial', 'empty', 'error'] as const) {
     }
   });
 }
+
+
+test('short desktop rail keeps settings and controls reachable', async ({ page }, testInfo) => {
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (!path.startsWith('/api/')) return route.continue();
+    if (path.endsWith('/auth/status')) return route.fulfill({ json: {
+      authEnabled: true, loggedIn: true, setupState: 'enabled', passwordSet: true,
+    } });
+    if (path.endsWith('/screening/status')) return route.fulfill({ json: { enabled: true, available: true } });
+    if (path.endsWith('/data/overview')) return route.fulfill({ json: overview });
+    return route.fulfill({ json: { items: [], total: 0 } });
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/data');
+  const rail = page.getByRole('complementary', { name: '桌面侧边导航' });
+  await expect(rail.getByRole('link', { name: '选股', exact: true })).toBeVisible();
+  const nav = rail.getByRole('navigation', { name: '主导航' });
+  await expect.poll(() => nav.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  const pageScroll = await page.evaluate(() => window.scrollY);
+  await nav.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const settings = rail.getByRole('link', { name: '设置', exact: true });
+  await expect(settings).toBeInViewport();
+  await expect(rail.getByRole('button', { name: '退出', exact: true })).toBeInViewport();
+  await rail.getByRole('button', { name: '切换主题', exact: true }).click();
+  const themeMenu = rail.getByRole('menu', { name: '主题模式' });
+  await expect(themeMenu).toBeInViewport();
+  await themeMenu.getByRole('menuitemradio', { name: '深色', exact: true }).click();
+  await rail.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '退出登录', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '退出登录', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(pageScroll);
+  const screenshot = testInfo.outputPath('data-center-short-desktop-1280x720.png');
+  await page.screenshot({ path: screenshot, animations: 'disabled' });
+  await testInfo.attach('short-desktop-controls', { path: screenshot, contentType: 'image/png' });
+});
