@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScreeningHotspotDetail } from '../../api/screening';
 import StockScreeningPage from '../StockScreeningPage';
@@ -1859,10 +1859,12 @@ describe('StockScreeningPage', () => {
     expect(await screen.findByText('深度补充：1 / 1')).toBeInTheDocument();
 
     expect(screen.getByText('为什么入选')).toBeInTheDocument();
-    expect(screen.getByText(/Screening pick；核心因子：liquidity 92.1、value 87.4/)).toBeInTheDocument();
+    expect(screen.getByText('核心因子：liquidity 92.1、value 87.4')).toBeInTheDocument();
+    expect(within(screen.getByText('核心因子：liquidity 92.1、value 87.4').closest('li')!).getByText('来源：screening · 质量：observed')).toBeInTheDocument();
     expect(screen.getByText('为什么现在')).toBeInTheDocument();
-    expect(screen.getByText(/消息：贵州茅台最新公告；涨跌幅：\+1.20%/)).toBeInTheDocument();
-    expect(screen.getByText(/来源：测试源、realtime_quote · 质量：ok/)).toBeInTheDocument();
+    expect(screen.getByText('消息：贵州茅台最新公告')).toBeInTheDocument();
+    expect(within(screen.getByText('消息：贵州茅台最新公告').closest('li')!).getByText('来源：测试源 · 质量：observed')).toBeInTheDocument();
+    expect(within(screen.getByText('涨跌幅：+1.20%').closest('li')!).getByText('来源：realtime_quote · 质量：observed')).toBeInTheDocument();
     expect(screen.getByText('增强摘要')).toBeInTheDocument();
     expect(screen.getByText(/行情：现价 1688/)).toBeInTheDocument();
     expect(screen.getByText('相关新闻')).toBeInTheDocument();
@@ -2194,6 +2196,32 @@ describe('StockScreeningPage', () => {
     expect(await screen.findByText(/自定义策略 \(capital_heat\) · A 股/)).toBeInTheDocument();
     // 正常恢复成功时不应对占位 taskId 触发轮询回退
     expect(getScreenTask).not.toHaveBeenCalledWith('run-b');
+  });
+
+  it('associates every mixed explanation with its own source and quality', async () => {
+    getScreeningStatus.mockResolvedValue({ enabled: true, available: true });
+    getHistory.mockResolvedValue({ runs: [{ runId: 'mixed', strategy: 'quality_value', market: 'cn', candidateCount: 1 }] });
+    getRun.mockResolvedValue({ enabled: true, runId: 'mixed', strategy: 'quality_value', market: 'cn', result: {
+      enabled: true, candidateCount: 1, candidates: [{ rank: 1, code: '600519', name: '混合证据', reason: '模型理由', raw: {},
+        whySelected: [
+          { code: 'selection_reason', text: '模型理由', source: 'llm', quality: 'inferred' },
+          { code: 'top_factors', text: '加权因子', source: 'screening', quality: 'observed' },
+          { code: 'post_analysis_summary', text: '同文案', source: 'post_analyzer:scorecard', quality: 'observed' },
+          { code: 'post_analysis_summary', text: '同文案', source: 'post_analyzer:external_http', quality: 'inferred' },
+        ], explanationQuality: { whySelected: 'partial' },
+      }],
+    } });
+    render(<StockScreeningPage />);
+    fireEvent.click(await screen.findByText('quality_value'));
+    const selected = (await screen.findByText('为什么入选')).parentElement!;
+    expect(within(selected).getAllByRole('listitem')).toHaveLength(4);
+    const expected = [['模型理由', 'llm', 'inferred'], ['加权因子', 'screening', 'observed'],
+      ['同文案', 'post_analyzer:scorecard', 'observed'], ['同文案', 'post_analyzer:external_http', 'inferred']];
+    for (const [text, source, quality] of expected) {
+      const row = within(selected).getByText(`来源：${source} · 质量：${quality}`).closest('li')!;
+      expect(within(row).getByText(text, { exact: true })).toBeInTheDocument();
+    }
+    expect(within(selected).getByText('综合质量：partial')).toBeInTheDocument();
   });
 
   it.each(['history', 'restore', 'post-analysis'])('preserves legacy run summaries with unknown provenance on %s', async (entry) => {

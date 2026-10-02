@@ -11,7 +11,12 @@ for (const state of ['complete', 'local-only', 'inferred', 'awaiting-evidence'] 
       : [explanation('top_factors', '核心因子：quality 91.0、value 86.0', 'screening', 'observed')];
     if (state === 'complete' || state === 'inferred') {
       whySelected.unshift(explanation('selection_reason', '模型判断盈利改善值得关注', 'llm', 'inferred'));
+      whySelected.push(explanation('llm_thesis', '独立模型论点：现金流改善', 'llm', 'inferred'));
       whySelected.push(explanation('post_analysis_summary', '后分析器提示业绩兑现仍需跟踪', 'post_analyzer:dsa', 'inferred'));
+    }
+    if (state === 'complete') {
+      whySelected.push(explanation('post_analysis_summary', '同文案但来源不同', 'post_analyzer:scorecard', 'observed'));
+      whySelected.push(explanation('post_analysis_summary', '同文案但来源不同', 'post_analyzer:external_http', 'inferred'));
     }
     const whyNow = state === 'complete'
       ? [explanation('news', '消息：公司发布季度经营数据', 'fixture_news', 'observed'),
@@ -22,11 +27,15 @@ for (const state of ['complete', 'local-only', 'inferred', 'awaiting-evidence'] 
     const candidate = {
       rank: 1, code: '600519', name: '演示候选', score: 88, screen_score: 85,
       reason: state === 'complete' || state === 'inferred' ? '模型判断盈利改善值得关注' : '',
+      llm_thesis: state === 'complete' || state === 'inferred' ? '独立模型论点：现金流改善' : '',
       risk_summary: '演示风险提示：注意估值波动', risk_level: 'medium', risk_flags: [],
       industry: '消费', price: 100, change_pct: 0, amount: 0,
       factor_scores: state === 'awaiting-evidence' ? {} : { quality: 91, value: 86 },
+      dsa_news: state === 'complete' ? [{ title: '公司发布季度经营数据', source: 'fixture_news', published_date: '2026-10-01' }] : [],
+      dsa_context: state === 'complete' ? { quote: { change_pct: 0 } } : {},
+      llm_catalysts: state === 'inferred' ? ['盈利改善可能持续'] : [],
       post_analysis_summaries: state === 'complete' || state === 'inferred'
-        ? { dsa: '后分析器提示业绩兑现仍需跟踪' } : {},
+        ? { dsa: '后分析器提示业绩兑现仍需跟踪', ...(state === 'complete' ? { scorecard: '同文案但来源不同', external_http: '同文案但来源不同' } : {}) } : {},
       why_selected: whySelected, why_now: whyNow,
       explanation_quality: {
         why_selected: state === 'complete' || state === 'inferred' ? 'partial' : 'ok',
@@ -76,10 +85,17 @@ for (const state of ['complete', 'local-only', 'inferred', 'awaiting-evidence'] 
     await expect(now).toBeVisible();
     await expect(page.getByText(candidate.risk_summary, { exact: true })).toBeVisible();
     await expect(selected).not.toContainText(candidate.risk_summary);
-    for (const item of whySelected) await expect(selected).toContainText(item.text);
-    for (const item of whyNow) await expect(now).toContainText(item.text);
-    await expect(selected).toContainText(`质量：${candidate.explanation_quality.why_selected}`);
-    await expect(now).toContainText(`质量：${candidate.explanation_quality.why_now}`);
+    for (const [card, items] of [[selected, whySelected], [now, whyNow]] as const) {
+      await expect(card.getByRole('listitem')).toHaveCount(items.length);
+      for (const item of items) {
+        const row = card.getByRole('listitem').filter({ has: page.getByText(item.text, { exact: true }) })
+          .filter({ has: page.getByText(`来源：${item.source} · 质量：${item.quality}`, { exact: true }) });
+        await expect(row).toHaveCount(1);
+        await expect(row).toBeVisible();
+      }
+    }
+    await expect(selected.getByText(`综合质量：${candidate.explanation_quality.why_selected}`, { exact: true })).toBeVisible();
+    await expect(now.getByText(`综合质量：${candidate.explanation_quality.why_now}`, { exact: true })).toBeVisible();
     if (state === 'complete' || state === 'inferred') {
       await expect(selected).toContainText('post_analyzer:dsa');
       await expect(selected).toContainText('llm');

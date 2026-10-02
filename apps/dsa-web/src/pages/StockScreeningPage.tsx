@@ -286,23 +286,35 @@ const getFactorEntries = (item: ScreeningCandidate) =>
 
 const getSelectionExplanations = (item: ScreeningCandidate): ScreeningExplanationItem[] => {
   if (item.whySelected?.length) return item.whySelected;
-  // Older persisted runs did not record explanation provenance. Preserve their
-  // summary without re-scoring historical factors or asserting it was observed.
-  const summary = [item.reason, item.llmThesis, ...Object.values(item.postAnalysisSummaries || {})]
-    .find((value) => typeof value === 'string' && value.trim())?.trim() || '';
-  return summary ? [{
+  // Legacy runs lack provenance. Retain every stored summary as unknown rather
+  // than re-scoring historical factors or asserting it was observed.
+  const summaries = Array.from(new Set(
+    [item.reason, item.llmThesis, ...Object.values(item.postAnalysisSummaries || {})]
+      .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+      .map((value) => value.trim()),
+  ));
+  return summaries.map((summary) => ({
     code: 'legacy_summary',
     text: `历史摘要（来源未记录）：${summary}`,
     source: 'legacy_result',
     quality: 'unknown',
-  }] : [];
+  }));
 };
 
-const getExplanationText = (items: ScreeningCandidate['whySelected']) =>
-  (items || []).map((item) => item.text).filter(Boolean).join('；');
-
-const getExplanationSourceText = (items: ScreeningCandidate['whySelected']) =>
-  Array.from(new Set((items || []).map((item) => item.source).filter(Boolean))).join('、');
+const ExplanationItems = ({ items, emptyText }: { items?: ScreeningExplanationItem[]; emptyText: string }) => (
+  items?.length ? (
+    <ul className="mt-2 space-y-2">
+      {items.map((item, index) => (
+        <li key={`${item.code}-${item.source}-${index}`} className="rounded-lg border border-border/50 bg-background/30 p-2">
+          <p className="text-sm leading-6 text-foreground">{item.text}</p>
+          <p className="mt-1 text-xs text-secondary-text">
+            来源：{item.source || 'unknown'} · 质量：{item.quality || 'unknown'}
+          </p>
+        </li>
+      ))}
+    </ul>
+  ) : <p className="mt-1 text-sm leading-6 text-foreground">{emptyText}</p>
+);
 
 const toMessageList = (values: string[] | undefined) =>
   Array.isArray(values) ? values.map((value) => String(value).trim()).filter(Boolean) : [];
@@ -1948,24 +1960,16 @@ const StockScreeningPage: React.FC = () => {
                                 <div className="grid gap-3 md:grid-cols-2">
                                   <div className="rounded-xl border border-cyan/25 bg-cyan/5 px-3 py-2.5">
                                     <p className="text-xs font-semibold text-cyan">为什么入选</p>
-                                    <p className="mt-1 text-sm leading-6 text-foreground">
-                                      {getExplanationText(selectionExplanations) || '暂无可验证的入选解释'}
-                                    </p>
-                                    {getExplanationSourceText(selectionExplanations) ? (
-                                      <p className="mt-1 text-xs text-secondary-text">
-                                        来源：{getExplanationSourceText(selectionExplanations)} · 质量：{selectionQuality}
-                                      </p>
+                                    <ExplanationItems items={selectionExplanations} emptyText="暂无可验证的入选解释" />
+                                    {selectionExplanations.length > 0 ? (
+                                      <p className="mt-2 text-xs text-secondary-text">综合质量：{selectionQuality}</p>
                                     ) : null}
                                   </div>
                                   <div className="rounded-xl border border-orange-400/25 bg-orange-500/5 px-3 py-2.5">
                                     <p className="text-xs font-semibold text-orange-500">为什么现在</p>
-                                    <p className="mt-1 text-sm leading-6 text-foreground">
-                                      {getExplanationText(item.whyNow) || '暂无带来源的价格、消息或事件证据'}
-                                    </p>
-                                    {getExplanationSourceText(item.whyNow) ? (
-                                      <p className="mt-1 text-xs text-secondary-text">
-                                        来源：{getExplanationSourceText(item.whyNow)} · 质量：{item.explanationQuality?.whyNow || 'unknown'}
-                                      </p>
+                                    <ExplanationItems items={item.whyNow} emptyText="暂无带来源的价格、消息或事件证据" />
+                                    {item.whyNow?.length ? (
+                                      <p className="mt-2 text-xs text-secondary-text">综合质量：{item.explanationQuality?.whyNow || 'unknown'}</p>
                                     ) : null}
                                   </div>
                                 </div>

@@ -40,6 +40,8 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                     "name": "贵州茅台",
                     "final_score": 88.5,
                     "ranking_reason": "低估值与流动性通过",
+                    "llm_thesis": "模型论点",
+                    "post_analysis_summaries": {"scorecard": "同文案", "external_http": "同文案"},
                 }
             ],
         }
@@ -75,6 +77,16 @@ class ScreeningHistoryTestCase(unittest.TestCase):
         assert stored is not None
         self.assertEqual(stored["candidate_count"], 1)
         self.assertEqual(stored["result"]["candidates"][0]["code"], "600519")
+        explanations = response["candidates"][0]["why_selected"]
+        self.assertIn(("llm", "inferred", "模型论点"), {
+            (item["source"], item["quality"], item["text"]) for item in explanations
+        })
+        self.assertEqual({(item["source"], item["quality"]) for item in explanations if item["text"] == "同文案"}, {
+            ("post_analyzer:scorecard", "observed"), ("post_analyzer:external_http", "inferred"),
+        })
+        self.assertEqual(service.history_detail("screen-run-1")["result"]["candidates"][0]["why_selected"], explanations)
+        self.assertEqual(stored["result"]["candidates"][0]["why_selected"], explanations)
+
 
         history = service.history(limit=10, strategy="dual_low", market="cn")
         self.assertEqual(history["run_count"], 1)

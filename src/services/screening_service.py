@@ -3779,23 +3779,23 @@ def _normalize_candidate(
     explicit_reason = (
         item.get("reason")
         or source.get("reason")
+        or item.get("ranking_reason")
         or source.get("ranking_reason")
         or item.get("summary")
+        or source.get("summary")
     )
-    fallback_reason, fallback_reason_source, fallback_reason_quality = _build_candidate_reason(
-        source,
-        factor_weights=factor_weights,
-    )
-    reason = explicit_reason or fallback_reason
-    return {
+    reason_origin = item if item.get("reason") else source
+    if reason_origin.get("reason") != explicit_reason:
+        reason_origin = {}
+    normalized = {
         "rank": item.get("rank") or source.get("rank") or rank,
         "code": item.get("code") or source.get("code") or item.get("symbol") or source.get("symbol") or item.get("stock_code") or source.get("stock_code") or "",
         "name": item.get("name") or source.get("name") or item.get("stock_name") or source.get("stock_name") or "",
         "score": _first_present(item, source, "score", "final_score"),
         "screen_score": _first_present(item, source, "screen_score"),
-        "reason": reason,
-        "reason_source": "" if explicit_reason else fallback_reason_source,
-        "reason_quality": "" if explicit_reason else fallback_reason_quality,
+        "reason": explicit_reason or "",
+        "reason_source": reason_origin.get("reason_source") or "",
+        "reason_quality": reason_origin.get("reason_quality") or "",
         "ranking_reason": item.get("ranking_reason") or source.get("ranking_reason") or "",
         "risk_summary": item.get("risk_summary") or source.get("risk_summary") or "",
         "risk_level": item.get("risk_level") or source.get("risk_level") or "",
@@ -3824,6 +3824,15 @@ def _normalize_candidate(
         "post_analysis_tags": item.get("post_analysis_tags") or source.get("post_analysis_tags") or [],
         "raw": source,
     }
+    if not explicit_reason:
+        # Provenance must use the same merged fields that the response exposes.
+        # In raw-wrapper payloads LLM inputs may live outside the raw snapshot.
+        reason, reason_source, reason_quality = _build_candidate_reason(
+            normalized,
+            factor_weights=factor_weights,
+        )
+        normalized.update(reason=reason, reason_source=reason_source, reason_quality=reason_quality)
+    return normalized
 
 
 def _strategy_factor_weights(
@@ -3876,26 +3885,36 @@ def _attach_candidate_explanations(
     why_selected: List[Dict[str, Any]] = []
     why_now: List[Dict[str, Any]] = []
 
+    selection_identities: set[Tuple[str, str, str]] = set()
+
+    def add_selection(code: str, text: str, source: str, quality: str) -> None:
+        text = text.strip()
+        identity = (text, source, quality)
+        if text and identity not in selection_identities:
+            why_selected.append(_explanation_item(code, text, source=source, quality=quality))
+            selection_identities.add(identity)
+
     reason = str(candidate.get("reason") or "").strip()
+    ranking_reason = str(candidate.get("ranking_reason") or "").strip()
+    llm_thesis = str(candidate.get("llm_thesis") or "").strip()
+    summaries = candidate.get("post_analysis_summaries")
+    summary_texts = {
+        str(value or "").strip() for value in summaries.values()
+    } if isinstance(summaries, dict) else set()
     if reason:
-        ranking_reason = str(candidate.get("ranking_reason") or "").strip()
-        llm_thesis = str(candidate.get("llm_thesis") or "").strip()
-        risk_summary = str(candidate.get("risk_summary") or "").strip()
-        reason_is_llm = (
-            reason == ranking_reason
-            or (bool(llm_thesis) and reason == llm_thesis)
-            or (bool(risk_summary) and reason == risk_summary)
-        )
         provenance_source = str(candidate.get("reason_source") or "").strip()
         provenance_quality = str(candidate.get("reason_quality") or "").strip()
-        why_selected.append(
-            _explanation_item(
-                "selection_reason",
-                reason,
-                source=provenance_source or ("llm" if reason_is_llm else "screening"),
-                quality=provenance_quality or ("inferred" if reason_is_llm else "observed"),
-            )
-        )
+        if provenance_source and provenance_quality:
+            add_selection("selection_reason", reason, provenance_source, provenance_quality)
+        elif reason in {ranking_reason, llm_thesis, str(candidate.get("risk_summary") or "").strip()}:
+            add_selection("selection_reason", reason, "llm", "inferred")
+        elif reason not in summary_texts:
+            add_selection("selection_reason", reason, "screening", "observed")
+        # A reason aliasing a post-summary has no independent local provenance;
+        # the analyzer entries below retain each actual source and its quality.
+
+    add_selection("ranking_reason", ranking_reason, "llm", "inferred")
+    add_selection("llm_thesis", llm_thesis, "llm", "inferred")
 
     factors = candidate.get("factor_scores")
     if isinstance(factors, dict):
@@ -3913,31 +3932,18 @@ def _attach_candidate_explanations(
         )[:3]
         if top_factors:
             text = "、".join(f"{key} {value:.1f}" for key, value, _weight in top_factors)
-            why_selected.append(
-                _explanation_item("top_factors", f"核心因子：{text}", source="screening", quality="observed")
-            )
+            add_selection("top_factors", f"核心因子：{text}", "screening", "observed")
 
-    summaries = candidate.get("post_analysis_summaries")
     if isinstance(summaries, dict):
-        existing_texts = {
-            str(item.get("text") or "").strip()
-            for item in why_selected
-            if str(item.get("text") or "").strip()
-        }
         for analyzer, value in summaries.items():
             summary = str(value or "").strip()
-            if not summary or summary in existing_texts:
-                continue
             analyzer_name = str(analyzer).strip() or "unknown"
-            why_selected.append(
-                _explanation_item(
-                    "post_analysis_summary",
-                    summary,
-                    source=f"post_analyzer:{analyzer_name}",
-                    quality=_post_analysis_summary_quality(candidate, analyzer_name),
-                )
+            add_selection(
+                "post_analysis_summary",
+                summary,
+                f"post_analyzer:{analyzer_name}",
+                _post_analysis_summary_quality(candidate, analyzer_name),
             )
-            existing_texts.add(summary)
 
     if not any(item.get("quality") == "observed" for item in why_selected):
         why_selected.append(

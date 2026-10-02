@@ -1,6 +1,6 @@
 # 选股解释契约
 
-选股候选同时返回 `why_selected`、`why_now` 和 `explanation_quality`。解释由后端在候选归一化和 DSA 数据补充完成后生成，Web 只展示契约，不再根据 `change_pct`、`amount` 或 LLM 字段自行猜测。
+选股候选同时返回 `why_selected`、`why_now` 和 `explanation_quality`。解释由后端在候选归一化和 DSA 数据补充完成后生成，Web 逐条展示 text、source 和 quality；分组综合质量只作摘要，不取代条目来源。Web 不再根据 `change_pct`、`amount` 或 LLM 字段自行猜测。
 
 ## 字段
 
@@ -16,7 +16,7 @@
 
 ## Why Selected
 
-确定性本地解释优先使用 screening reason 和当前策略实际参与评分的因子；零权重或未配置的因子既不会进入缺省 `selection_reason`，也不会被写成“核心因子”，两处展示顺序都按“因子分数 × 策略权重”的真实贡献排列。`risk_summary` / `risk_level` 始终保留在独立风险展示，不会在缺少 reason 时提升为 `selection_reason`；行业标签也不会单独冒充入选依据。缺少 reason 和可核验加权因子时只确认“已进入当前选股候选结果”，不会把可能经过 LLM 排序、组合约束或后处理调整的最终名次误写成“确定性筛选排名”。来自 `post_analysis_summaries` 的 DSA/外部 analyzer 摘要保留 `post_analyzer:<name>` 来源并标记为 inferred，不冒充本地 observed；即使候选同时已有显式 `reason` / `ranking_reason`，不同内容的后分析摘要也会作为 `post_analysis_summary` 一并返回，同文案只展示一次。纯本地确定性 `scorecard` 摘要保持 observed，但只要 scorecard 消费了 `llm_confidence`、`llm_catalysts` 或 `llm_risks`，其解释质量就保持 inferred。即使 LLM 未配置、超时或返回无效结构，候选仍至少返回入选结果说明；LLM 不是本地解释的前置条件。
+确定性本地解释优先使用 screening reason 和当前策略实际参与评分的因子；零权重或未配置的因子既不会进入缺省 `selection_reason`，也不会被写成“核心因子”，两处展示顺序都按“因子分数 × 策略权重”的真实贡献排列。`risk_summary` / `risk_level` 始终保留在独立风险展示，不会在缺少 reason 时提升为 `selection_reason`；行业标签也不会单独冒充入选依据。缺少 reason 和可核验加权因子时只确认“已进入当前选股候选结果”，不会把可能经过 LLM 排序、组合约束或后处理调整的最终名次误写成“确定性筛选排名”。来自 `post_analysis_summaries` 的 DSA/外部 analyzer 摘要保留 `post_analyzer:<name>` 来源并标记为 inferred，不冒充本地 observed；即使候选同时已有显式 `reason` / `ranking_reason`，后分析摘要也会作为 `post_analysis_summary` 一并返回。去重身份为 `(text, source, quality)`：同一来源和质量的相同文案只保留一次，不同来源或质量即使文案相同也分别保留。显式 reason 若只是后分析摘要的别名，不凭空增加 screening/observed 来源。纯本地确定性 `scorecard` 摘要保持 observed，但只要 scorecard 消费了 `llm_confidence`、`llm_catalysts` 或 `llm_risks`，其解释质量就保持 inferred。LLM ranking 的 `reason` 与 `thesis` 都是合法独立解释入口，即使仅返回 thesis 也保留为 llm/inferred；两者内容不同则同时保留，相同则按上述身份去重。归一化 raw 包装对象时先合并响应字段，再判断 scorecard 是否消费了外层 LLM 输入。即使 LLM 未配置、超时或返回无效结构，候选仍至少返回入选结果说明；LLM 不是本地解释的前置条件。
 
 ## Why Now
 
@@ -39,4 +39,12 @@
 
 ## 旧版历史兼容
 
-打开或自动恢复旧版已持久化运行时，若候选缺少 `why_selected` 但保留 `reason`、`llm_thesis` 或后分析摘要，Web 在解释卡片保留“历史摘要（来源未记录）”，来源为 `legacy_result`、质量为 `unknown`。不会用当前策略权重重新解释旧因子，也不会把旧行情或顶层占位 0 当作当前 observed 证据。已有 explanation 数组优先使用；兼容展示不回写数据库、不修改历史记录。
+打开或自动恢复旧版已持久化运行时，若候选缺少 `why_selected` 但保留 `reason`、`llm_thesis` 或后分析摘要，Web 在解释卡片保留所有不同的“历史摘要（来源未记录）”，来源为 `legacy_result`、质量为 `unknown`。不会用当前策略权重重新解释旧因子，也不会把旧行情或顶层占位 0 当作当前 observed 证据。已有 explanation 数组优先使用；兼容展示不回写数据库、不修改历史记录。
+
+## 验收矩阵
+
+- 接受的 ranker 响应：reason-only、thesis-only、reason+thesis、同文案 reason/thesis、risk-only。
+- 归一化：plain Pick、raw 包装字段、重复归一化后 provenance 保持一致。
+- 后分析：显式 reason 与每个 analyzer 共存；同文案不同来源不丢失 inferred；本地 scorecard 与消费 LLM 输入的 scorecard 分别分类。
+- 传输/持久化：同步 screen、异步 task、history 的前端映射保留条目；screen 保存和 history_detail 读取逐项一致。
+- 页面：混合来源逐条标注，综合 partial 不覆盖单条 observed/inferred；旧历史来源 unknown；真实 0 与缺失值分离。

@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """Regression tests for provenance-aware screening explanations."""
 
+import json
+
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.services.screening.models import ScreeningConfig
+from src.services.screening.models import Pick, ScreeningConfig
+from src.services.screening.ranker import _parse_ranking_response_detail
 from src.services.screening.scorer import normalized_factor_weights
 from src.services.screening_service import (
     _attach_candidate_explanations,
@@ -196,8 +199,10 @@ def test_distinct_llm_ranking_reason_stays_inferred_and_keeps_rank_fallback() ->
 
     result = _attach_candidate_explanations(candidate)
 
-    assert [item["quality"] for item in result["why_selected"]] == ["inferred", "observed"]
-    assert result["why_selected"][1]["code"] == "selection_outcome"
+    assert [item["quality"] for item in result["why_selected"]] == ["inferred", "inferred", "observed"]
+    assert result["why_selected"][1]["code"] == "llm_thesis"
+    assert result["why_selected"][1]["text"] == "A different, longer thesis"
+    assert result["why_selected"][2]["code"] == "selection_outcome"
 
 
 def test_news_and_events_without_provenance_are_not_observed() -> None:
@@ -458,3 +463,73 @@ def test_recent_relative_provider_date_is_observed_why_now_evidence() -> None:
 
     assert result["why_now"][0]["code"] == "event"
     assert result["why_now"][0]["quality"] == "observed"
+
+
+@pytest.mark.parametrize("rationale", [
+    {"reason": "排序理由"},
+    {"thesis": "独立论点"},
+    {"reason": "排序理由", "thesis": "独立论点"},
+    {"reason": "同一理由", "thesis": "同一理由"},
+    {"risk": "只应显示在风险区"},
+])
+def test_accepted_ranker_rationale_survives_as_individual_inferred_items(rationale) -> None:
+    original = Pick(rank=1, code="600519", name="测试", final_score=80, screen_score=80)
+    parsed = _parse_ranking_response_detail(
+        json.dumps({"ranked": [{"code": "600519", "llm_score": 90, **rationale}]}),
+        [original],
+    )
+    assert parsed.coverage == 1.0
+    assert parsed.errors == []
+    candidate = _normalize_candidate(parsed.picks[0], 1)
+    result = _attach_candidate_explanations(candidate)
+    llm_items = [item for item in result["why_selected"] if item["source"] == "llm"]
+    assert {item["text"] for item in llm_items} == {
+        value for key, value in rationale.items() if key in {"reason", "thesis"}
+    }
+    assert len(llm_items) == len({item["text"] for item in llm_items})
+    assert all(item["quality"] == "inferred" for item in llm_items)
+    assert all(item["text"] != rationale.get("risk") for item in result["why_selected"])
+
+
+def test_equal_summary_text_keeps_each_analyzer_provenance() -> None:
+    candidate = _normalize_candidate({
+        "code": "600519",
+        "post_analysis_summaries": {"scorecard": "同文案", "external_http": "同文案"},
+    }, 1)
+    result = _attach_candidate_explanations(candidate)
+    matching = [item for item in result["why_selected"] if item["text"] == "同文案"]
+    assert {(item["source"], item["quality"]) for item in matching} == {
+        ("post_analyzer:scorecard", "observed"), ("post_analyzer:external_http", "inferred"),
+    }
+    assert len(matching) == 2
+    assert result["explanation_quality"]["why_selected"] == "partial"
+
+
+def test_explicit_post_summary_alias_does_not_invent_observed_local_source() -> None:
+    candidate = _normalize_candidate({
+        "code": "600519", "reason": "远程摘要",
+        "post_analysis_summaries": {"dsa": "远程摘要"},
+    }, 1)
+    result = _attach_candidate_explanations(candidate)
+    matching = [item for item in result["why_selected"] if item["text"] == "远程摘要"]
+    assert len(matching) == 1
+    assert matching[0]["source"] == "post_analyzer:dsa"
+    assert matching[0]["quality"] == "inferred"
+
+
+def test_raw_wrapper_uses_merged_ranking_and_scorecard_inputs() -> None:
+    candidate = _normalize_candidate({
+        "code": "600519", "ranking_reason": "外层模型理由", "llm_risks": ["模型风险"],
+        "raw": {"post_analysis_summaries": {"scorecard": "本地评分叠加模型风险"}},
+    }, 1)
+    result = _attach_candidate_explanations(candidate)
+    assert any(item["text"] == "外层模型理由" and item["source"] == "llm" for item in result["why_selected"])
+    assert any(item["source"] == "post_analyzer:scorecard" and item["quality"] == "inferred" for item in result["why_selected"])
+    fallback = _normalize_candidate({
+        "code": "600519", "llm_risks": ["模型风险"],
+        "raw": {"post_analysis_summaries": {"scorecard": "本地评分叠加模型风险"}},
+    }, 1)
+    assert fallback["reason_quality"] == "inferred"
+    normalized_again = _normalize_candidate(fallback, 1)
+    assert normalized_again["reason_source"] == fallback["reason_source"]
+    assert normalized_again["reason_quality"] == "inferred"
