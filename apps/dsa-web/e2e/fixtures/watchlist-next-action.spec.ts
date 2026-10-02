@@ -13,12 +13,12 @@ test('watchlist signals stay readable and accessible at sidebar widths', async (
     contentType: 'application/javascript',
     body: `
       import React from '/node_modules/.vite/deps/react.js';
-      import { createRoot } from '/node_modules/.vite/deps/react-dom_client.js';
+      import ReactDOMClient from '/node_modules/.vite/deps/react-dom_client.js';
       import '/src/index.css';
       import { HomeStockWorkspace } from '/src/components/watchlist/HomeStockWorkspace.tsx';
       import { UiLanguageProvider } from '/src/contexts/UiLanguageContext.tsx';
       const noop = async () => {};
-      createRoot(document.getElementById('root')).render(React.createElement(UiLanguageProvider, null,
+      ReactDOMClient.createRoot(document.getElementById('root')).render(React.createElement(UiLanguageProvider, null,
         React.createElement('main', {className: 'min-h-screen bg-background p-4 text-foreground'},
           React.createElement('div', {className: 'flex h-[1100px] w-full md:w-64 lg:w-72'},
             React.createElement(HomeStockWorkspace, {
