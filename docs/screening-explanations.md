@@ -36,3 +36,7 @@
 ## 浏览器验收
 
 `cd apps/dsa-web && npx playwright test --config playwright.fixture.config.ts` 使用固定 API fixture 渲染真实页面，不依赖后端服务或密钥。CI 的 `web-gate` 安装 Chromium、执行验收，并将截图上传为 `web-ui-evidence-<head SHA>` artifact（保留 30 天）；截图不提交到仓库。该验收验证页面交互和展示，不代表实时 provider/LLM 可用性。
+
+## 旧版历史兼容
+
+打开或自动恢复旧版已持久化运行时，若候选缺少 `why_selected` 但保留 `reason`、`llm_thesis` 或后分析摘要，Web 在解释卡片保留“历史摘要（来源未记录）”，来源为 `legacy_result`、质量为 `unknown`。不会用当前策略权重重新解释旧因子，也不会把旧行情或顶层占位 0 当作当前 observed 证据。已有 explanation 数组优先使用；兼容展示不回写数据库、不修改历史记录。

@@ -30,6 +30,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   screeningApi,
   type ScreeningCandidate,
+  type ScreeningExplanationItem,
   type ScreeningHotspotDetail,
   type ScreeningHotspot,
   type ScreeningHotspotsResponse,
@@ -282,6 +283,20 @@ const getFactorEntries = (item: ScreeningCandidate) =>
     .filter(([, value]) => typeof value === 'number')
     .sort((a, b) => Number(b[1]) - Number(a[1]))
     .slice(0, 6);
+
+const getSelectionExplanations = (item: ScreeningCandidate): ScreeningExplanationItem[] => {
+  if (item.whySelected?.length) return item.whySelected;
+  // Older persisted runs did not record explanation provenance. Preserve their
+  // summary without re-scoring historical factors or asserting it was observed.
+  const summary = [item.reason, item.llmThesis, ...Object.values(item.postAnalysisSummaries || {})]
+    .find((value) => typeof value === 'string' && value.trim())?.trim() || '';
+  return summary ? [{
+    code: 'legacy_summary',
+    text: `历史摘要（来源未记录）：${summary}`,
+    source: 'legacy_result',
+    quality: 'unknown',
+  }] : [];
+};
 
 const getExplanationText = (items: ScreeningCandidate['whySelected']) =>
   (items || []).map((item) => item.text).filter(Boolean).join('；');
@@ -1891,6 +1906,10 @@ const StockScreeningPage: React.FC = () => {
                 {candidates.map((item) => {
                   const expanded = expandedCode === item.code;
                   const factors = getFactorEntries(item);
+                  const selectionExplanations = getSelectionExplanations(item);
+                  const selectionQuality = item.whySelected?.length
+                    ? item.explanationQuality?.whySelected || 'unknown'
+                    : 'unknown';
                   const llmInsightAvailable = hasLlmInsight(item);
                   const dsaWarnings = item.dsaContext?.warnings || [];
                   const dsaNews = item.dsaNews || [];
@@ -1930,11 +1949,11 @@ const StockScreeningPage: React.FC = () => {
                                   <div className="rounded-xl border border-cyan/25 bg-cyan/5 px-3 py-2.5">
                                     <p className="text-xs font-semibold text-cyan">为什么入选</p>
                                     <p className="mt-1 text-sm leading-6 text-foreground">
-                                      {getExplanationText(item.whySelected) || '暂无可验证的入选解释'}
+                                      {getExplanationText(selectionExplanations) || '暂无可验证的入选解释'}
                                     </p>
-                                    {getExplanationSourceText(item.whySelected) ? (
+                                    {getExplanationSourceText(selectionExplanations) ? (
                                       <p className="mt-1 text-xs text-secondary-text">
-                                        来源：{getExplanationSourceText(item.whySelected)} · 质量：{item.explanationQuality?.whySelected || 'unknown'}
+                                        来源：{getExplanationSourceText(selectionExplanations)} · 质量：{selectionQuality}
                                       </p>
                                     ) : null}
                                   </div>

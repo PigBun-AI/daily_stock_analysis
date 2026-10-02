@@ -96,3 +96,49 @@ for (const state of ['complete', 'local-only', 'inferred', 'awaiting-evidence'] 
     await expect(selected).toContainText(whySelected[0].text);
   });
 }
+
+test('legacy history restores a summary without inventing provenance', async ({ page }, testInfo) => {
+  let taskRequests = 0;
+  const summary = { run_id: 'legacy-run', strategy: 'quality_value', market: 'cn', candidate_count: 1 };
+  await page.addInitScript(() => {
+    sessionStorage.setItem('dsa.screening.activeScreenTask.v1', JSON.stringify({
+      taskId: 'legacy-task', runId: 'legacy-run', strategy: 'quality_value', market: 'cn', maxResults: 3,
+    }));
+  });
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (!path.startsWith('/api/')) return route.continue();
+    let json: unknown = { items: [], total: 0 };
+    if (path.endsWith('/auth/status')) json = { authEnabled: false, loggedIn: true, setupState: 'no_password' };
+    else if (path.endsWith('/screening/status')) json = { enabled: true, available: true };
+    else if (path.endsWith('/screening/strategies')) json = {
+      enabled: true, strategy_count: 1, strategies: [{ id: 'quality_value', name: 'Quality Value', description: '历史结果兼容', market_scope: ['cn'] }],
+    };
+    else if (path.endsWith('/screening/hotspots')) json = { enabled: true, hotspots: [], hotspot_count: 0 };
+    else if (path.endsWith('/screening/history')) json = { enabled: true, runs: [summary], run_count: 1 };
+    else if (path.endsWith('/screening/history/legacy-run')) json = {
+      ...summary, enabled: true, result: {
+        ...summary, enabled: true, candidates: [{
+          rank: 1, code: '600519', name: '旧版候选', reason: '旧版保存的估值理由', score: 88,
+          factor_scores: { topic_alignment: 99 }, change_pct: 0, amount: 0, raw: {},
+        }],
+      },
+    };
+    else if (path.includes('/screening/screen/tasks')) taskRequests += 1;
+    await route.fulfill({ json });
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/screening');
+  const selected = page.getByText('为什么入选', { exact: true }).locator('..');
+  const now = page.getByText('为什么现在', { exact: true }).locator('..');
+  await expect(selected).toContainText('历史摘要（来源未记录）：旧版保存的估值理由');
+  await expect(selected).toContainText('来源：legacy_result · 质量：unknown');
+  await expect(selected).not.toContainText('核心因子');
+  await expect(now).toContainText('暂无带来源的价格、消息或事件证据');
+  await expect(now).not.toContainText('涨跌幅：');
+  expect(taskRequests).toBe(0);
+  const section = page.locator('section').filter({ has: page.getByRole('heading', { name: '选股结果', exact: true }) });
+  const screenshot = testInfo.outputPath('screening-legacy-history-1440.png');
+  await section.screenshot({ path: screenshot, animations: 'disabled' });
+  await testInfo.attach('legacy-history', { path: screenshot, contentType: 'image/png' });
+});

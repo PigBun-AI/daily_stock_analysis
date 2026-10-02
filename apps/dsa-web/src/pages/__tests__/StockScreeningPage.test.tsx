@@ -1699,7 +1699,7 @@ describe('StockScreeningPage', () => {
     expect(screen.queryByText(/Missing gemini_api_key/)).not.toBeInTheDocument();
     expect(screen.getByText(/排序：确定性因子/)).toBeInTheDocument();
     expect(screen.getByText('因子排序')).toBeInTheDocument();
-    expect(screen.getByText(/value_quality/)).toBeInTheDocument();
+    expect(screen.getByText('本地后置评分: value_quality', { exact: true })).toBeInTheDocument();
     expect(screen.queryByText(/主要优势：流动性 93、估值 87/)).not.toBeInTheDocument();
     expect(screen.queryByText(/LLM 已降级/)).not.toBeInTheDocument();
   });
@@ -2194,6 +2194,34 @@ describe('StockScreeningPage', () => {
     expect(await screen.findByText(/自定义策略 \(capital_heat\) · A 股/)).toBeInTheDocument();
     // 正常恢复成功时不应对占位 taskId 触发轮询回退
     expect(getScreenTask).not.toHaveBeenCalledWith('run-b');
+  });
+
+  it.each(['history', 'restore', 'post-analysis'])('preserves legacy run summaries with unknown provenance on %s', async (entry) => {
+    getScreeningStatus.mockResolvedValue({ enabled: true, available: true });
+    const summary = { runId: 'legacy-run', strategy: 'quality_value', market: 'cn', candidateCount: 1 };
+    const candidate = {
+      rank: 1, code: '600519', name: '旧版候选', reason: entry === 'post-analysis' ? '' : '旧版保存的估值理由',
+      postAnalysisSummaries: entry === 'post-analysis' ? { scorecard: '旧版保存的估值理由' } : {},
+      factorScores: { topicAlignment: 99 }, changePct: 0, amount: 0,
+      explanationQuality: { whySelected: 'ok' }, raw: {},
+    };
+    const detail = { ...summary, enabled: true, result: { enabled: true, candidates: [candidate], candidateCount: 1 } };
+    getHistory.mockResolvedValue({ enabled: true, runs: [summary], runCount: 1 });
+    getRun.mockResolvedValue(detail);
+    if (entry === 'restore') {
+      window.sessionStorage.setItem('dsa.screening.activeScreenTask.v1', JSON.stringify({
+        taskId: 'legacy-task', runId: summary.runId, strategy: summary.strategy, market: 'cn', maxResults: 3,
+      }));
+    }
+    render(<StockScreeningPage />);
+    if (entry !== 'restore') fireEvent.click(await screen.findByText('quality_value'));
+    expect(await screen.findByText('历史摘要（来源未记录）：旧版保存的估值理由')).toBeInTheDocument();
+    expect(screen.getByText('来源：legacy_result · 质量：unknown')).toBeInTheDocument();
+    expect(screen.queryByText('暂无可验证的入选解释')).not.toBeInTheDocument();
+    expect(screen.getByText('暂无带来源的价格、消息或事件证据')).toBeInTheDocument();
+    expect(screen.queryByText('涨跌幅：+0.00%')).not.toBeInTheDocument();
+    expect(screen.queryByText(/核心因子：/)).not.toBeInTheDocument();
+    expect(candidate).not.toHaveProperty('whySelected');
   });
 
   it('shows an unknown why-now explanation instead of treating a placeholder zero as observed', async () => {
