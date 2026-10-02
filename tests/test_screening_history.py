@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -10,6 +11,7 @@ from src.config import Config
 from src.services.screening.config import Config as ScreeningRuntimeConfig
 from src.services.screening.models import Pick
 from src.services.screening.post_analysis import run_post_analyzers
+from src.services.screening.ranker import rank_candidates_with_metadata
 from src.services.screening.strategy import list_strategies
 from src.services.screening_service import ScreeningService, _build_dsa_candidate_context
 from src.storage import DatabaseManager
@@ -23,6 +25,85 @@ class ScreeningHistoryTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         DatabaseManager.reset_instance()
+
+    def test_thesis_only_ranking_survives_fallback_screen_and_history(self) -> None:
+        for fallback in ("none", "local_factors", "scorecard"):
+            with self.subTest(fallback=fallback):
+                picks = [
+                    Pick(rank=1, code="600519", name="Original leader", final_score=85, screen_score=85),
+                    Pick(
+                        rank=2, code="000001", name="Promoted pick", final_score=84, screen_score=84,
+                        factor_scores={} if fallback == "none" else {"value": 90, "stability": 80},
+                    ),
+                ]
+                thesis = "模型仅通过论点解释此次排名提升"
+                with patch("src.services.screening.ranker._call_llm", return_value=json.dumps({
+                    "ranked": [
+                        {"code": "000001", "llm_score": 99, "thesis": thesis},
+                        {"code": "600519", "llm_score": 60},
+                    ],
+                })):
+                    ranking = rank_candidates_with_metadata(
+                        picks, "test hints", "test-key", "test-model", max_retries=0,
+                    )
+                self.assertTrue(ranking.ranked)
+                self.assertEqual(ranking.coverage, 1.0)
+                self.assertEqual(ranking.errors, [])
+                promoted = ranking.picks[0]
+                self.assertEqual(promoted.code, "000001")
+                self.assertEqual(promoted.ranking_reason, "")
+                run_id = f"thesis-only-{fallback}"
+                if fallback == "scorecard":
+                    analyzed, degradation = run_post_analyzers(
+                        ranking.picks, analyzer_names=["scorecard"], run_id=run_id,
+                        config=ScreeningRuntimeConfig(),
+                    )
+                    self.assertEqual(degradation, [])
+                else:
+                    analyzed = ranking.picks
+                service = ScreeningService(self.config, db_manager=self.db)
+                with (
+                    patch(
+                        "src.services.screening_service._get_screening_status_snapshot",
+                        return_value=({}, True, None),
+                    ),
+                    patch(
+                        "src.services.screening_service._call_screening_screen",
+                        return_value={
+                            "run_id": run_id, "candidates": analyzed,
+                            "effective_factor_weights": {"value": 1}, "llm_ranked": True,
+                        },
+                    ),
+                    patch(
+                        "src.services.screening_service._enrich_candidates_with_dsa",
+                        side_effect=lambda candidates: (candidates, {}),
+                    ),
+                ):
+                    response = service.screen(strategy="dual_low", market="cn", max_results=1)
+
+                candidate = response["candidates"][0]
+                self.assertEqual(candidate["code"], promoted.code)
+                self.assertEqual(candidate["rank"], 1)
+                self.assertEqual(candidate["score"], promoted.final_score)
+                explanations = candidate["why_selected"]
+                self.assertEqual([item for item in explanations if item["source"] == "llm"], [{
+                    "code": "llm_thesis", "text": thesis, "source": "llm", "quality": "inferred",
+                }])
+                if fallback == "scorecard":
+                    self.assertIn({
+                        "code": "selection_reason", "text": promoted.post_analysis_summaries["scorecard"],
+                        "source": "post_analyzer:scorecard", "quality": "observed",
+                    }, explanations)
+                elif fallback == "local_factors":
+                    self.assertTrue(any(item["code"] == "top_factors" for item in explanations))
+                else:
+                    self.assertTrue(any(item["code"] == "selection_outcome" for item in explanations))
+                stored = self.db.get_screening_run(run_id)
+                self.assertIsNotNone(stored)
+                assert stored is not None
+                self.assertEqual(stored["result"]["candidates"][0]["why_selected"], explanations)
+                history = service.history_detail(run_id)
+                self.assertEqual(history["result"]["candidates"][0]["why_selected"], explanations)
 
     def test_reranked_scorecard_summary_survives_screen_and_history(self) -> None:
         picks = [
