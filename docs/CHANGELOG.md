@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [测试] 补充选股后分析真实调分与重排回归，验证显式 LLM 排名理由与 scorecard、DSA、external_http 摘要来源共存，以及服务返回和历史持久化一致。
 - [修复] 美股日线路由现按各数据源当前优先级排序，单项 `*_PRIORITY` 配置（如 `YFINANCE_PRIORITY=0`）对美股即时生效；指数固定首选与 Longbridge preferred 语义保持不变
 
 - [新功能] 选股候选新增后端生成的 Why Selected / Why Now 解释、来源与质量状态，Web 统一展示并区分真实 0 与无来源的缺失占位值；旧版历史摘要保留为来源未记录/unknown，不重新评分或回写记录；模型 reason/thesis 与不同来源同文案均保留逐条 provenance。

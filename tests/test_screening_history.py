@@ -7,6 +7,9 @@ import unittest
 from unittest.mock import Mock, patch
 
 from src.config import Config
+from src.services.screening.config import Config as ScreeningRuntimeConfig
+from src.services.screening.models import Pick
+from src.services.screening.post_analysis import run_post_analyzers
 from src.services.screening.strategy import list_strategies
 from src.services.screening_service import ScreeningService, _build_dsa_candidate_context
 from src.storage import DatabaseManager
@@ -20,6 +23,63 @@ class ScreeningHistoryTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         DatabaseManager.reset_instance()
+
+    def test_reranked_scorecard_summary_survives_screen_and_history(self) -> None:
+        picks = [
+            Pick(rank=1, code="600519", name="Original leader", final_score=85, screen_score=85),
+            Pick(
+                rank=2, code="000001", name="Promoted pick", final_score=84, screen_score=84,
+                ranking_reason="LLM ranking reason", llm_confidence=0.8,
+                factor_scores={"value": 90, "stability": 80},
+            ),
+        ]
+        analyzed, degradation = run_post_analyzers(
+            picks, analyzer_names=["scorecard"], run_id="scorecard-history",
+            config=ScreeningRuntimeConfig(),
+        )
+        self.assertEqual(degradation, [])
+        promoted = analyzed[0]
+        self.assertEqual(promoted.code, "000001")
+        self.assertGreater(promoted.final_score, 85)
+        service = ScreeningService(self.config, db_manager=self.db)
+        with (
+            patch(
+                "src.services.screening_service._get_screening_status_snapshot",
+                return_value=({}, True, None),
+            ),
+            patch(
+                "src.services.screening_service._call_screening_screen",
+                return_value={
+                    "run_id": "scorecard-history", "candidates": analyzed,
+                    "effective_factor_weights": {"value": 1}, "llm_ranked": True,
+                },
+            ),
+            patch(
+                "src.services.screening_service._enrich_candidates_with_dsa",
+                side_effect=lambda candidates: (candidates, {}),
+            ),
+        ):
+            response = service.screen(strategy="dual_low", market="cn", max_results=1)
+
+        candidate = response["candidates"][0]
+        self.assertEqual(candidate["code"], promoted.code)
+        self.assertEqual(candidate["rank"], 1)
+        self.assertEqual(candidate["score"], promoted.final_score)
+        explanations = candidate["why_selected"]
+        self.assertIn({
+            "code": "selection_reason", "text": promoted.ranking_reason,
+            "source": "llm", "quality": "inferred",
+        }, explanations)
+        self.assertIn({
+            "code": "post_analysis_summary", "text": promoted.post_analysis_summaries["scorecard"],
+            "source": "post_analyzer:scorecard", "quality": "inferred",
+        }, explanations)
+        stored = self.db.get_screening_run("scorecard-history")
+        self.assertIsNotNone(stored)
+        assert stored is not None
+        self.assertEqual(stored["result"]["candidates"][0]["why_selected"], explanations)
+        history = service.history_detail("scorecard-history")
+        self.assertEqual(history["result"]["candidates"][0]["why_selected"], explanations)
 
     def test_completed_screen_run_is_persisted_and_loaded(self) -> None:
         raw_result = {

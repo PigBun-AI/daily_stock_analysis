@@ -45,6 +45,6 @@
 
 - 接受的 ranker 响应：reason-only、thesis-only、reason+thesis、同文案 reason/thesis、risk-only。
 - 归一化：plain Pick、raw 包装字段、重复归一化后 provenance 保持一致。
-- 后分析：显式 reason 与每个 analyzer 共存；同文案不同来源不丢失 inferred；本地 scorecard 与消费 LLM 输入的 scorecard 分别分类。
+- 后分析：显式 reason 与每个 analyzer 共存；真实 scorecard、DSA 和 external_http 调分并重排后，排名理由与已完成的 analyzer 摘要仍分别保留；同文案不同来源不丢失 inferred；本地 scorecard 与消费 LLM 输入的 scorecard 分别分类。
 - 传输/持久化：同步 screen、异步 task、history 的前端映射保留条目；screen 保存和 history_detail 读取逐项一致。
 - 页面：混合来源逐条标注，综合 partial 不覆盖单条 observed/inferred；旧历史来源 unknown；真实 0 与缺失值分离。

@@ -4,10 +4,13 @@
 import json
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock
 
 import pytest
 
 from src.services.screening.models import Pick, ScreeningConfig
+from src.services.screening.config import Config as ScreeningRuntimeConfig
+from src.services.screening.post_analysis import run_post_analyzers
 from src.services.screening.ranker import _parse_ranking_response_detail
 from src.services.screening.scorer import normalized_factor_weights
 from src.services.screening_service import (
@@ -333,6 +336,68 @@ def test_explicit_reason_keeps_distinct_post_analysis_summaries() -> None:
         "quality": "inferred",
     }
     assert result["explanation_quality"]["why_selected"] == "partial"
+
+
+@pytest.mark.parametrize(("analyzer", "confidence", "quality"), [
+    ("scorecard", None, "observed"),
+    ("scorecard", 0.8, "inferred"),
+    ("dsa", None, "inferred"),
+    ("external_http", None, "inferred"),
+])
+def test_reranked_pick_keeps_llm_reason_and_completed_analyzer_summary(
+    monkeypatch, analyzer: str, confidence: float | None, quality: str,
+) -> None:
+    picks = [
+        Pick(rank=1, code="600519", name="Original leader", final_score=85, screen_score=85),
+        Pick(
+            rank=2, code="000001", name="Promoted pick", final_score=84, screen_score=84,
+            ranking_reason="LLM ranking reason", llm_confidence=confidence,
+            factor_scores={"value": 90, "stability": 80},
+        ),
+    ]
+
+    def respond(_url, *, json, timeout):
+        # Mock only the remote transport; use the actual analyzer parsing,
+        # score adjustments, re-ranking and summary recording below.
+        if "stock_code" in json:
+            body = {
+                "summary": "DSA completed summary",
+                "report": {"summary": {
+                    "operation_advice": "买入" if json["stock_code"] == "000001" else "中性",
+                }},
+            }
+        else:
+            body = {"ranked": [
+                {"code": pick["code"], "summary": "External completed summary",
+                 "score_delta": 3 if pick["code"] == "000001" else 0}
+                for pick in json["candidates"]
+            ]}
+        return Mock(json=Mock(return_value=body))
+
+    monkeypatch.setattr("src.services.screening.post_analysis.requests.post", respond)
+    analyzed, degradation = run_post_analyzers(
+        picks, analyzer_names=[analyzer], run_id="explanation-rerank",
+        config=ScreeningRuntimeConfig(
+            dsa_api_url="https://dsa.example.invalid",
+            post_analyzer_url="https://analyzer.example.invalid",
+        ),
+    )
+
+    assert degradation == []
+    promoted = analyzed[0]
+    assert promoted.code == "000001"
+    assert promoted.rank == 1
+    assert promoted.final_score > 85
+    assert promoted.post_analysis_status[analyzer] == "completed"
+    assert promoted.post_analysis_score_deltas[analyzer] > 0
+
+    candidate = _normalize_candidate(promoted, 1)
+    result = _attach_candidate_explanations(candidate, factor_weights={"value": 1})
+    assert candidate["reason"] == promoted.ranking_reason
+    assert {"code": "selection_reason", "text": promoted.ranking_reason,
+            "source": "llm", "quality": "inferred"} in result["why_selected"]
+    assert {"code": "post_analysis_summary", "text": promoted.post_analysis_summaries[analyzer],
+            "source": f"post_analyzer:{analyzer}", "quality": quality} in result["why_selected"]
 
 
 def test_post_analysis_summary_matching_explicit_reason_is_not_duplicated() -> None:
