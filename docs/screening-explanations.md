@@ -18,6 +18,8 @@
 
 确定性本地解释优先使用 screening reason 和当前策略实际参与评分的因子；零权重或未配置的因子既不会进入缺省 `selection_reason`，也不会被写成“核心因子”，两处展示顺序都按“因子分数 × 策略权重”的真实贡献排列。`risk_summary` / `risk_level` 始终保留在独立风险展示，不会在缺少 reason 时提升为 `selection_reason`；行业标签也不会单独冒充入选依据。缺少 reason 和可核验加权因子时只确认“已进入当前选股候选结果”，不会把可能经过 LLM 排序、组合约束或后处理调整的最终名次误写成“确定性筛选排名”。来自 `post_analysis_summaries` 的 DSA/外部 analyzer 摘要保留 `post_analyzer:<name>` 来源并标记为 inferred，不冒充本地 observed；即使候选同时已有显式 `reason` / `ranking_reason`，后分析摘要也会作为 `post_analysis_summary` 一并返回。去重身份为 `(text, source, quality)`：同一来源和质量的相同文案只保留一次，不同来源或质量即使文案相同也分别保留。显式 reason 若只是后分析摘要的别名，不凭空增加 screening/observed 来源。纯本地确定性 `scorecard` 摘要保持 observed，但只要 scorecard 消费了 `llm_confidence`、`llm_catalysts` 或 `llm_risks`，其解释质量就保持 inferred。LLM ranking 的 `reason` 与 `thesis` 都是合法独立解释入口，即使仅返回 thesis 也保留为 llm/inferred；两者内容不同则同时保留，相同则按上述身份去重。归一化 raw 包装对象时先合并响应字段，再判断 scorecard 是否消费了外层 LLM 输入。即使 LLM 未配置、超时或返回无效结构，候选仍至少返回入选结果说明；LLM 不是本地解释的前置条件。
 
+后分析器省略摘要、返回 `null` 或空白摘要时，若 `post_analysis_status` 为 `completed` 且 `post_analysis_score_deltas` 是有限非零数值，Why Selected 返回 `post_analysis_score_delta` 条目，说明分析器已完成、评分调整值以及未提供摘要；`value` 保留带符号的分差，来源仍为 `post_analyzer:<name>`，质量沿用该分析器摘要的规则。该条目只说明评分影响，不推测调分依据。有摘要时沿用摘要条目，不重复追加调分说明；失败、跳过、零分差或无有效分差时不生成此类条目。归一化、服务响应和历史持久化保留状态、分差及生成的解释，不改变原评分与重排行为。
+
 ## Why Now
 
 时点解释只使用带来源的证据：DSA 新闻、事件，以及 `dsa_context.quote` 中明确存在的实时行情字段。新闻与事件都必须带可解析的 `published_date`，且发布时间在最近 30 天内；解析复用 SearchService 已支持的 ISO、RFC 2822、中文日期、Unix timestamp 和相对日期格式。缺日期或过期的新闻/事件不标记为 observed，包括复用已补充候选上下文而未重新搜索的路径。候选顶层的 `change_pct=0` 或 `amount=0` 不能单独证明数据真实存在，因为旧数据源可能用 0 表示缺失；没有 quote provenance 时返回 `awaiting_evidence`，不会写成“当前涨跌幅 0%”。
@@ -45,6 +47,6 @@
 
 - 接受的 ranker 响应：reason-only、thesis-only、reason+thesis、同文案 reason/thesis、risk-only。
 - 归一化：plain Pick、raw 包装字段、重复归一化后 provenance 保持一致。
-- 后分析：显式 reason 与每个 analyzer 共存；真实 scorecard、DSA 和 external_http 调分并重排后，排名理由与已完成的 analyzer 摘要仍分别保留；同文案不同来源不丢失 inferred；本地 scorecard 与消费 LLM 输入的 scorecard 分别分类。
+- 后分析：显式 reason 与每个 analyzer 共存；真实 scorecard、DSA 和 external_http 调分并重排后，排名理由与已完成的 analyzer 摘要仍分别保留；external_http 无摘要的正负调分与重排保留通用来源说明，服务响应与历史记录一致；同文案不同来源不丢失 inferred；本地 scorecard 与消费 LLM 输入的 scorecard 分别分类。
 - 传输/持久化：同步 screen、异步 task、history 的前端映射保留条目；screen 保存和 history_detail 读取逐项一致。
 - 页面：混合来源逐条标注，综合 partial 不覆盖单条 observed/inferred；旧历史来源 unknown；真实 0 与缺失值分离。

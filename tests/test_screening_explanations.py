@@ -417,6 +417,70 @@ def test_post_analysis_summary_matching_explicit_reason_is_not_duplicated() -> N
     ]
 
 
+@pytest.mark.parametrize(("analyzer", "llm_inputs", "quality"), [
+    ("external_http", {}, "inferred"),
+    ("dsa", {}, "inferred"),
+    ("scorecard", {}, "observed"),
+    ("scorecard", {"llm_confidence": 0.8}, "inferred"),
+])
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("delta", [3.0, -2.5])
+def test_summaryless_score_change_survives_normalization(
+    analyzer: str, llm_inputs: dict, quality: str, wrapped: bool, delta: float,
+) -> None:
+    payload = {
+        "code": "000001",
+        "ranking_reason": "独立排名理由",
+        "post_analysis_status": {analyzer: "completed"},
+        "post_analysis_score_deltas": {analyzer: delta},
+        "post_analysis_summaries": {analyzer: "   "},
+    }
+    candidate = _normalize_candidate(
+        {"raw": payload, **llm_inputs} if wrapped else {**payload, **llm_inputs}, 1,
+    )
+    for _ in range(2):
+        assert candidate["post_analysis_status"] == {analyzer: "completed"}
+        assert candidate["post_analysis_score_deltas"] == {analyzer: delta}
+        result = _attach_candidate_explanations(candidate)
+        analyzer_items = [item for item in result["why_selected"]
+                          if item["source"] == f"post_analyzer:{analyzer}"]
+        assert analyzer_items == [{
+            "code": "post_analysis_score_delta",
+            "text": f"{analyzer} 后分析已完成，评分调整 {delta:+g}（未提供摘要）",
+            "source": f"post_analyzer:{analyzer}", "quality": quality, "value": delta,
+        }]
+        assert any(item["text"] == "独立排名理由" for item in result["why_selected"])
+        candidate = _normalize_candidate(result, 1)
+
+
+@pytest.mark.parametrize(("status", "delta", "summary", "expected_codes"), [
+    ("completed", 3.0, None, ["post_analysis_score_delta"]),
+    ("completed", 3.0, "已有摘要", ["selection_reason"]),
+    ("completed", 0.0, "", []),
+    ("failed", 3.0, "", []),
+    ("skipped", 3.0, "", []),
+    (None, 3.0, "", []),
+    ("completed", None, "", []),
+    ("completed", "3", "", []),
+    ("completed", True, "", []),
+    ("completed", float("nan"), "", []),
+    ("completed", float("inf"), "", []),
+])
+def test_score_change_explanation_requires_completed_nonzero_delta_without_summary(
+    status, delta, summary, expected_codes,
+) -> None:
+    payload = {
+        "code": "000001",
+        "post_analysis_status": {"external_http": status},
+        "post_analysis_score_deltas": {"external_http": delta},
+    }
+    if summary is not None:
+        payload["post_analysis_summaries"] = {"external_http": summary}
+    result = _attach_candidate_explanations(_normalize_candidate(payload, 1))
+    assert [item["code"] for item in result["why_selected"]
+            if item["source"] == "post_analyzer:external_http"] == expected_codes
+
+
 def test_risk_level_is_not_promoted_to_selection_reason() -> None:
     candidate = _normalize_candidate({
         "code": "600519",

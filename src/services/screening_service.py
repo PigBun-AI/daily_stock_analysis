@@ -3820,7 +3820,9 @@ def _normalize_candidate(
         "dsa_news": dsa_news,
         "dsa_events": dsa_events,
         "dsa_analysis_summary": dsa_analysis_summary,
+        "post_analysis_status": item.get("post_analysis_status") or source.get("post_analysis_status") or {},
         "post_analysis_summaries": item.get("post_analysis_summaries") or source.get("post_analysis_summaries") or {},
+        "post_analysis_score_deltas": item.get("post_analysis_score_deltas") or source.get("post_analysis_score_deltas") or {},
         "post_analysis_tags": item.get("post_analysis_tags") or source.get("post_analysis_tags") or [],
         "raw": source,
     }
@@ -3887,11 +3889,13 @@ def _attach_candidate_explanations(
 
     selection_identities: set[Tuple[str, str, str]] = set()
 
-    def add_selection(code: str, text: str, source: str, quality: str) -> None:
+    def add_selection(
+        code: str, text: str, source: str, quality: str, *, value: Optional[float] = None,
+    ) -> None:
         text = text.strip()
         identity = (text, source, quality)
         if text and identity not in selection_identities:
-            why_selected.append(_explanation_item(code, text, source=source, quality=quality))
+            why_selected.append(_explanation_item(code, text, source=source, quality=quality, value=value))
             selection_identities.add(identity)
 
     reason = str(candidate.get("reason") or "").strip()
@@ -3943,6 +3947,26 @@ def _attach_candidate_explanations(
                 summary,
                 f"post_analyzer:{analyzer_name}",
                 _post_analysis_summary_quality(candidate, analyzer_name),
+            )
+
+    statuses = candidate.get("post_analysis_status")
+    deltas = candidate.get("post_analysis_score_deltas")
+    if isinstance(statuses, dict) and isinstance(deltas, dict):
+        for analyzer, delta in deltas.items():
+            summary = str(summaries.get(analyzer) or "").strip() if isinstance(summaries, dict) else ""
+            if (
+                summary or statuses.get(analyzer) != "completed"
+                or isinstance(delta, bool) or not isinstance(delta, (int, float))
+                or not math.isfinite(float(delta)) or delta == 0
+            ):
+                continue
+            analyzer_name = str(analyzer).strip() or "unknown"
+            add_selection(
+                "post_analysis_score_delta",
+                f"{analyzer_name} 后分析已完成，评分调整 {delta:+g}（未提供摘要）",
+                f"post_analyzer:{analyzer_name}",
+                _post_analysis_summary_quality(candidate, analyzer_name),
+                value=float(delta),
             )
 
     if not any(item.get("quality") == "observed" for item in why_selected):

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from itertools import product
 from unittest.mock import Mock, patch
 
 from src.config import Config
@@ -161,6 +162,73 @@ class ScreeningHistoryTestCase(unittest.TestCase):
         self.assertEqual(stored["result"]["candidates"][0]["why_selected"], explanations)
         history = service.history_detail("scorecard-history")
         self.assertEqual(history["result"]["candidates"][0]["why_selected"], explanations)
+
+    def test_summaryless_external_score_changes_survive_screen_and_history(self) -> None:
+        for delta, summary_kind in product((3.0, -3.0), ("omitted", "null", "blank")):
+            with self.subTest(delta=delta, summary_kind=summary_kind):
+                picks = [
+                    Pick(rank=1, code="600519", name="Original leader", final_score=85, screen_score=85),
+                    Pick(rank=2, code="000001", name="Challenger", final_score=84, screen_score=84),
+                ]
+                changed_code = "000001" if delta > 0 else "600519"
+                run_id = f"summaryless-external-{delta}-{summary_kind}"
+                remote_result = {"ranked": [
+                    {"code": pick.code, "score_delta": delta if pick.code == changed_code else 0}
+                    for pick in picks
+                ]}
+                if summary_kind != "omitted":
+                    for item in remote_result["ranked"]:
+                        item["summary"] = None if summary_kind == "null" else "   "
+                with patch(
+                    "src.services.screening.post_analysis.requests.post",
+                    return_value=Mock(json=Mock(return_value=remote_result)),
+                ):
+                    analyzed, degradation = run_post_analyzers(
+                        picks, analyzer_names=["external_http"], run_id=run_id,
+                        config=ScreeningRuntimeConfig(post_analyzer_url="https://analyzer.example.invalid"),
+                    )
+                self.assertEqual(degradation, [])
+                self.assertEqual(analyzed[0].code, "000001")
+                changed = next(pick for pick in analyzed if pick.code == changed_code)
+                self.assertEqual(changed.post_analysis_summaries["external_http"], "")
+                self.assertEqual(changed.post_analysis_status["external_http"], "completed")
+                self.assertEqual(changed.final_score, changed.screen_score + delta)
+
+                service = ScreeningService(self.config, db_manager=self.db)
+                with (
+                    patch(
+                        "src.services.screening_service._get_screening_status_snapshot",
+                        return_value=({}, True, None),
+                    ),
+                    patch(
+                        "src.services.screening_service._call_screening_screen",
+                        return_value={"run_id": run_id, "candidates": analyzed},
+                    ),
+                    patch(
+                        "src.services.screening_service._enrich_candidates_with_dsa",
+                        side_effect=lambda candidates: (candidates, {}),
+                    ),
+                ):
+                    response = service.screen(strategy="dual_low", market="cn", max_results=2)
+                self.assertEqual(response["candidates"][0]["code"], "000001")
+                candidate = next(item for item in response["candidates"] if item["code"] == changed_code)
+                self.assertEqual(candidate["score"], changed.final_score)
+                self.assertEqual(candidate["post_analysis_status"], {"external_http": "completed"})
+                self.assertEqual(candidate["post_analysis_score_deltas"], {"external_http": delta})
+                self.assertIn({
+                    "code": "post_analysis_score_delta",
+                    "text": f"external_http 后分析已完成，评分调整 {delta:+g}（未提供摘要）",
+                    "source": "post_analyzer:external_http", "quality": "inferred", "value": delta,
+                }, candidate["why_selected"])
+                unchanged = next(item for item in response["candidates"] if item["code"] != changed_code)
+                self.assertFalse(any(
+                    item["source"] == "post_analyzer:external_http" for item in unchanged["why_selected"]
+                ))
+                stored = self.db.get_screening_run(run_id)
+                self.assertIsNotNone(stored)
+                assert stored is not None
+                self.assertEqual(stored["result"]["candidates"], response["candidates"])
+                self.assertEqual(service.history_detail(run_id)["result"]["candidates"], response["candidates"])
 
     def test_completed_screen_run_is_persisted_and_loaded(self) -> None:
         raw_result = {
