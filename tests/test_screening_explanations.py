@@ -11,7 +11,7 @@ import pytest
 from src.services.screening.models import Pick, ScreeningConfig
 from src.services.screening.config import Config as ScreeningRuntimeConfig
 from src.services.screening.post_analysis import run_post_analyzers
-from src.services.screening.ranker import _parse_ranking_response_detail
+from src.services.screening.ranker import _parse_ranking_response_detail, rank_candidates_with_metadata
 from src.services.screening.scorer import normalized_factor_weights
 from src.services.screening_service import (
     _attach_candidate_explanations,
@@ -613,9 +613,8 @@ def test_accepted_ranker_rationale_survives_as_individual_inferred_items(rationa
     candidate = _normalize_candidate(parsed.picks[0], 1)
     result = _attach_candidate_explanations(candidate)
     llm_items = [item for item in result["why_selected"] if item["source"] == "llm"]
-    assert {item["text"] for item in llm_items} == {
-        value for key, value in rationale.items() if key in {"reason", "thesis"}
-    }
+    expected = {value for key, value in rationale.items() if key in {"reason", "thesis"}}
+    assert {item["text"] for item in llm_items} == (expected or {"模型已参与排序（未提供入选理由）"})
     assert len(llm_items) == len({item["text"] for item in llm_items})
     assert all(item["quality"] == "inferred" for item in llm_items)
     assert all(item["text"] != rationale.get("risk") for item in result["why_selected"])
@@ -726,3 +725,42 @@ def test_failed_refresh_keeps_stale_evidence_out_of_why_now(monkeypatch):
     assert [item["code"] for item in result["why_now"]] == ["awaiting_evidence"]
     assert result["explanation_quality"]["why_now"] == "unknown"
     assert any("offline" in warning for warning in metadata["warnings"])
+
+
+@pytest.mark.parametrize("rationale", [{}, {"risk": "风险不应作为入选理由"}])
+@pytest.mark.parametrize("score", [None, 0, 90])
+def test_reasonless_accepted_llm_ranking_keeps_inferred_quality(monkeypatch, rationale, score):
+    from src.services.screening import ranker
+
+    response = {"code": "000001", **rationale}
+    if score is not None:
+        response["llm_score"] = score
+    monkeypatch.setattr(ranker, "_call_llm", lambda *args, **kwargs: json.dumps({"ranked": [response]}))
+    ranked = rank_candidates_with_metadata(
+        [Pick(rank=1, code="000001", name="Name", final_score=80, screen_score=80,
+              factor_scores={"value": 80})], "", "test-key", "test-model", max_retries=0,
+    )
+    assert ranked.ranked
+    candidate = _normalize_candidate(ranked.picks[0], 1, factor_weights={"value": 1})
+    for _ in range(2):
+        result = _attach_candidate_explanations(candidate, factor_weights={"value": 1})
+        inferred = [item for item in result["why_selected"] if item["source"] == "llm"]
+        assert inferred == [{"code": "llm_ranking", "text": "模型已参与排序（未提供入选理由）",
+                             "source": "llm", "quality": "inferred"}]
+        assert result["explanation_quality"]["why_selected"] == "partial"
+        assert all(item["text"] != rationale.get("risk") for item in result["why_selected"])
+        candidate = _normalize_candidate({"raw": result}, 1, factor_weights={"value": 1})
+
+
+def test_failed_llm_ranking_does_not_invent_inferred_participation(monkeypatch):
+    from src.services.screening import ranker
+
+    monkeypatch.setattr(ranker, "_call_llm", lambda *args, **kwargs: "invalid")
+    ranked = rank_candidates_with_metadata(
+        [Pick(rank=1, code="000001", name="Name", final_score=80, screen_score=80,
+              factor_scores={"value": 80})], "", "test-key", "test-model", max_retries=0,
+    )
+    assert not ranked.ranked
+    result = _attach_candidate_explanations(_normalize_candidate(ranked.picks[0], 1), factor_weights={"value": 1})
+    assert not any(item["source"] == "llm" for item in result["why_selected"])
+    assert result["explanation_quality"]["why_selected"] == "ok"

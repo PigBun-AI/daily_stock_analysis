@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 无入选理由的合法 LLM 排序保留 inferred 参与标记，避免仅展示本地因子而误报全 observed；风险文本保持独立。
 - [修复] 选股预补充新闻/事件与 Why Now 共用时效及来源校验，单独刷新无效缓存，失败保持 unknown 与告警。
 - [修复] 选股后分析器完成非零调分但未提供摘要（含 null 和空白摘要）时，Why Selected 保留分析器来源、质量与调分说明，并在归一化、服务响应和历史记录中保留完成状态及分差。
 - [测试] 补充仅返回 thesis 的 LLM 排序回归，验证真实重排后模型论点与本地因子、后分析摘要共存，并完整保留在服务响应及历史记录中。

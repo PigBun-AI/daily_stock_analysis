@@ -3935,6 +3935,16 @@ def _attach_candidate_explanations(
     add_selection("ranking_reason", ranking_reason, "llm", "inferred")
     add_selection("llm_thesis", llm_thesis, "llm", "inferred")
 
+    llm_score = candidate.get("llm_score")
+    if (
+        not ranking_reason and not llm_thesis
+        and isinstance(llm_score, (int, float)) and not isinstance(llm_score, bool)
+        and math.isfinite(float(llm_score))
+    ):
+        add_selection(
+            "llm_ranking", "模型已参与排序（未提供入选理由）", "llm", "inferred",
+        )
+
     factors = candidate.get("factor_scores")
     if isinstance(factors, dict):
         top_factors = sorted(

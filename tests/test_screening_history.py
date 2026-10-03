@@ -260,6 +260,39 @@ class ScreeningHistoryTestCase(unittest.TestCase):
         self.assertEqual(candidate["explanation_quality"]["why_now"], "ok")
         self.assertEqual(service.history_detail("refreshed-history")["result"]["candidates"], [candidate])
 
+    def test_reasonless_llm_ranking_provenance_survives_screen_and_history(self) -> None:
+        from src.services.screening.ranker import rank_candidates_with_metadata
+
+        for score in (None, 0, 90):
+            with self.subTest(score=score):
+                ranked_item = {"code": "000001", "risk": "风险只保留在风险区"}
+                if score is not None:
+                    ranked_item["llm_score"] = score
+                with patch("src.services.screening.ranker._call_llm",
+                           return_value=json.dumps({"ranked": [ranked_item]})):
+                    ranked = rank_candidates_with_metadata(
+                        [Pick(rank=1, code="000001", name="Name", final_score=80, screen_score=80,
+                              factor_scores={"value": 80})], "", "test-key", "test-model", max_retries=0,
+                    )
+                self.assertTrue(ranked.ranked)
+                run_id = f"reasonless-{score}"
+                service = ScreeningService(self.config, db_manager=self.db)
+                with (
+                    patch("src.services.screening_service._get_screening_status_snapshot", return_value=({}, True, None)),
+                    patch("src.services.screening_service._call_screening_screen", return_value={
+                        "run_id": run_id, "candidates": ranked.picks, "effective_factor_weights": {"value": 1},
+                    }),
+                    patch("src.services.screening_service._enrich_candidates_with_dsa",
+                          side_effect=lambda candidates: (candidates, {})),
+                ):
+                    response = service.screen(strategy="dual_low", market="cn", max_results=1)
+                candidate = response["candidates"][0]
+                self.assertEqual(candidate["explanation_quality"]["why_selected"], "partial")
+                self.assertEqual(candidate["risk_summary"], "风险只保留在风险区")
+                self.assertIn({"code": "llm_ranking", "text": "模型已参与排序（未提供入选理由）",
+                               "source": "llm", "quality": "inferred"}, candidate["why_selected"])
+                self.assertEqual(service.history_detail(run_id)["result"]["candidates"], [candidate])
+
     def test_completed_screen_run_is_persisted_and_loaded(self) -> None:
         raw_result = {
             "run_id": "screen-run-1",
