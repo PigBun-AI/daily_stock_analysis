@@ -62,3 +62,5 @@
 ### 无理由模型排序
 
 成功接受的 LLM 排序结果即使省略 reason/thesis（包括仅 risk、仅 code 的合法响应），仍以 llm/inferred 显示“模型已参与排序（未提供入选理由）”，整体 Why Selected 为 partial；真实 0 分仍算模型输入。风险文本只保留在风险区，失败后回退的纯因子结果不添加模型参与项。
+
+回归验证使用双候选实际重排，覆盖缺省分数、零分及 risk-only 响应；重排后每个候选的本地加权因子保持 observed，模型参与项保持 inferred，重复归一化后综合质量仍为 partial。

@@ -767,21 +767,31 @@ def test_reasonless_accepted_llm_ranking_keeps_inferred_quality(monkeypatch, rat
     response = {"code": "000001", **rationale}
     if score is not None:
         response["llm_score"] = score
-    monkeypatch.setattr(ranker, "_call_llm", lambda *args, **kwargs: json.dumps({"ranked": [response]}))
+    monkeypatch.setattr(ranker, "_call_llm", lambda *args, **kwargs: json.dumps({"ranked": [
+        response, {"code": "600519", "llm_score": 0},
+    ]}))
     ranked = rank_candidates_with_metadata(
-        [Pick(rank=1, code="000001", name="Name", final_score=80, screen_score=80,
-              factor_scores={"value": 80})], "", "test-key", "test-model", max_retries=0,
+        [Pick(rank=1, code="600519", name="Original leader", final_score=90, screen_score=90,
+              factor_scores={"value": 90}),
+         Pick(rank=2, code="000001", name="Promoted pick", final_score=80, screen_score=80,
+              factor_scores={"value": 80})],
+        "", "test-key", "test-model", max_retries=0, rank_weight=1,
     )
     assert ranked.ranked
-    candidate = _normalize_candidate(ranked.picks[0], 1, factor_weights={"value": 1})
-    for _ in range(2):
-        result = _attach_candidate_explanations(candidate, factor_weights={"value": 1})
-        inferred = [item for item in result["why_selected"] if item["source"] == "llm"]
-        assert inferred == [{"code": "llm_ranking", "text": "模型已参与排序（未提供入选理由）",
-                             "source": "llm", "quality": "inferred"}]
-        assert result["explanation_quality"]["why_selected"] == "partial"
-        assert all(item["text"] != rationale.get("risk") for item in result["why_selected"])
-        candidate = _normalize_candidate({"raw": result}, 1, factor_weights={"value": 1})
+    assert [pick.code for pick in ranked.picks] == ["000001", "600519"]
+    assert [pick.rank for pick in ranked.picks] == [1, 2]
+    for pick in ranked.picks:
+        candidate = _normalize_candidate(pick, pick.rank, factor_weights={"value": 1})
+        for _ in range(2):
+            result = _attach_candidate_explanations(candidate, factor_weights={"value": 1})
+            inferred = [item for item in result["why_selected"] if item["source"] == "llm"]
+            assert inferred == [{"code": "llm_ranking", "text": "模型已参与排序（未提供入选理由）",
+                                 "source": "llm", "quality": "inferred"}]
+            assert any(item["code"] == "top_factors" and item["quality"] == "observed"
+                       for item in result["why_selected"])
+            assert result["explanation_quality"]["why_selected"] == "partial"
+            assert all(item["text"] != rationale.get("risk") for item in result["why_selected"])
+            candidate = _normalize_candidate({"raw": result}, pick.rank, factor_weights={"value": 1})
 
 
 def test_failed_llm_ranking_does_not_invent_inferred_participation(monkeypatch):
