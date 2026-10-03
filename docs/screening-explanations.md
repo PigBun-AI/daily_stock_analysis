@@ -50,3 +50,7 @@
 - 后分析：显式 reason 与每个 analyzer 共存；真实 scorecard、DSA 和 external_http 调分并重排后，排名理由与已完成的 analyzer 摘要仍分别保留；external_http 无摘要的正负调分与重排保留通用来源说明，服务响应与历史记录一致；同文案不同来源不丢失 inferred；本地 scorecard 与消费 LLM 输入的 scorecard 分别分类。
 - 传输/持久化：同步 screen、异步 task、history 的前端映射保留条目；screen 保存和 history_detail 读取逐项一致。
 - 页面：混合来源逐条标注，综合 partial 不覆盖单条 observed/inferred；旧历史来源 unknown；真实 0 与缺失值分离。
+
+### 预补充证据刷新
+
+后排名补充与 Why Now 使用相同的可用性判断：新闻和事件必须有来源、非空标题/摘要，且发布时间在 30 天窗口内。仅当两类缓存均可用时跳过补充；过期、无日期或缺来源/正文的一类会单独刷新，另一类有效缓存和已有行情/基本面继续复用。刷新失败保留降级告警，不把旧新闻提升为 observed；候选数上限和原搜索超时保持不变。

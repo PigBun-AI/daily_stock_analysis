@@ -3456,6 +3456,7 @@ def _enrich_candidates_with_dsa(candidates: List[Dict[str, Any]]) -> Tuple[List[
             isinstance(existing_context, dict)
             and existing_context.get("enriched")
             and _candidate_has_dsa_news(candidate)
+            and _has_recent_dsa_evidence(candidate.get("dsa_events") or _extract_dsa_events_from_context(existing_context))
         ):
             enriched_count += 1
             existing_warnings = existing_context.get("warnings") or []
@@ -3495,13 +3496,23 @@ def _enrich_candidates_with_dsa(candidates: List[Dict[str, Any]]) -> Tuple[List[
 
 
 def _candidate_has_dsa_news(candidate: Dict[str, Any]) -> bool:
-    news_items = candidate.get("dsa_news")
-    if isinstance(news_items, list) and any(isinstance(item, dict) for item in news_items):
-        return True
-    context = candidate.get("dsa_context")
-    if not isinstance(context, dict):
-        return False
-    return _news_has_results(context.get("news"))
+    return _has_recent_dsa_evidence(
+        candidate.get("dsa_news") or _extract_dsa_news_from_context(candidate.get("dsa_context"))
+    )
+
+
+def _has_recent_dsa_evidence(payload: Any) -> bool:
+    items = payload.get("results") if isinstance(payload, dict) else payload
+    return isinstance(items, list) and any(_is_usable_timing_evidence(item) for item in items)
+
+
+def _is_usable_timing_evidence(item: Any) -> bool:
+    return (
+        isinstance(item, dict)
+        and bool(str(item.get("source") or "").strip())
+        and bool(str(item.get("title") or item.get("snippet") or "").strip())
+        and _is_recent_explanation_item(item)
+    )
 
 
 def _news_has_results(news: Any) -> bool:
@@ -3544,8 +3555,12 @@ def _build_dsa_candidate_context(
     )
     existing_news = existing_context.get("news") if isinstance(existing_context.get("news"), dict) else {}
     news: Dict[str, Any] = dict(existing_news) if existing_news else {"success": False, "results": []}
+    if candidate.get("dsa_news"):
+        news["results"] = candidate["dsa_news"]
     existing_events = existing_context.get("events") if isinstance(existing_context.get("events"), dict) else {}
     events: Dict[str, Any] = dict(existing_events) if existing_events else {"success": False, "results": []}
+    if candidate.get("dsa_events"):
+        events["results"] = candidate["dsa_events"]
     existing_warnings = existing_context.get("warnings") or []
     if isinstance(existing_warnings, list):
         warnings.extend(str(item) for item in existing_warnings if item)
@@ -3585,7 +3600,7 @@ def _build_dsa_candidate_context(
             fundamentals = {}
 
     if include_news:
-        if not _news_has_results(news):
+        if not _has_recent_dsa_evidence(news):
             try:
                 news = search_dsa_stock_news(code, _env_text(candidate.get("name")) or name or code, max_results=3)
                 if not news.get("success"):
@@ -3602,7 +3617,7 @@ def _build_dsa_candidate_context(
         }
 
     if include_events:
-        if not _news_has_results(events):
+        if not _has_recent_dsa_evidence(events):
             try:
                 events = search_dsa_stock_events(
                     code,
@@ -3985,10 +4000,7 @@ def _attach_candidate_explanations(
             (
                 item
                 for item in news_items
-                if isinstance(item, dict)
-                and str(item.get("source") or "").strip()
-                and _is_recent_explanation_item(item)
-                and str(item.get("title") or item.get("snippet") or "").strip()
+                if _is_usable_timing_evidence(item)
             ),
             None,
         )
@@ -4008,10 +4020,7 @@ def _attach_candidate_explanations(
             (
                 item
                 for item in event_items
-                if isinstance(item, dict)
-                and str(item.get("source") or "").strip()
-                and _is_recent_explanation_item(item)
-                and str(item.get("title") or item.get("snippet") or "").strip()
+                if _is_usable_timing_evidence(item)
             ),
             None,
         )

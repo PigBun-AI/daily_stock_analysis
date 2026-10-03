@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import unittest
 from itertools import product
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 from src.config import Config
@@ -229,6 +230,35 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                 assert stored is not None
                 self.assertEqual(stored["result"]["candidates"], response["candidates"])
                 self.assertEqual(service.history_detail(run_id)["result"]["candidates"], response["candidates"])
+
+    def test_refreshed_pre_enrichment_is_returned_and_persisted(self) -> None:
+        old = {"title": "stale", "source": "cached", "published_date": "2000-01-01"}
+        fresh = {"title": "current", "source": "provider", "published_date": datetime.now().date().isoformat()}
+        service = ScreeningService(self.config, db_manager=self.db)
+        with (
+            patch("src.services.screening_service._get_screening_status_snapshot", return_value=({}, True, None)),
+            patch("src.services.screening_service._call_screening_screen", return_value={
+                "run_id": "refreshed-history", "candidates": [{
+                    "code": "000001", "dsa_context": {
+                        "enriched": True, "quote": {"price": 10}, "fundamentals": {"status": "ok"},
+                        "news": {"success": True, "results": [old]},
+                        "events": {"success": True, "results": [old]},
+                    },
+                }],
+            }),
+            patch("src.services.screening_service._get_dsa_fetcher_manager",
+                  return_value=Mock(get_stock_name=Mock(return_value="Name"))),
+            patch("src.services.screening_service.search_dsa_stock_news",
+                  return_value={"success": True, "results": [fresh]}),
+            patch("src.services.screening_service.search_dsa_stock_events",
+                  return_value={"success": True, "results": [fresh]}),
+        ):
+            response = service.screen(strategy="dual_low", market="cn", max_results=1)
+        candidate = response["candidates"][0]
+        self.assertEqual({item["code"] for item in candidate["why_now"]}, {"news", "event"})
+        self.assertTrue(all(item["source"] == "provider" for item in candidate["why_now"]))
+        self.assertEqual(candidate["explanation_quality"]["why_now"], "ok")
+        self.assertEqual(service.history_detail("refreshed-history")["result"]["candidates"], [candidate])
 
     def test_completed_screen_run_is_persisted_and_loaded(self) -> None:
         raw_result = {

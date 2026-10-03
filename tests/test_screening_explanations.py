@@ -15,6 +15,7 @@ from src.services.screening.ranker import _parse_ranking_response_detail
 from src.services.screening.scorer import normalized_factor_weights
 from src.services.screening_service import (
     _attach_candidate_explanations,
+    _enrich_candidates_with_dsa,
     _normalize_candidate,
     _strategy_factor_weights,
 )
@@ -662,3 +663,66 @@ def test_raw_wrapper_uses_merged_ranking_and_scorecard_inputs() -> None:
     normalized_again = _normalize_candidate(fallback, 1)
     assert normalized_again["reason_source"] == fallback["reason_source"]
     assert normalized_again["reason_quality"] == "inferred"
+
+
+@pytest.mark.parametrize("location", ["top_level", "context"])
+@pytest.mark.parametrize("missing", ["stale", "undated", "source", "text"])
+@pytest.mark.parametrize("kind", ["news", "events"])
+def test_refresh_unusable_pre_enrichment_before_why_now(monkeypatch, location, missing, kind):
+    """Exercise both cache gates, actual context builder, normalization and explanations."""
+    from src.services import screening_service as service
+
+    today = datetime.now().date().isoformat()
+    current = {"title": "current evidence", "source": "provider", "published_date": today}
+    unusable = dict(current)
+    if missing == "stale":
+        unusable["published_date"] = "2000-01-01"
+    elif missing == "undated":
+        unusable.pop("published_date")
+    elif missing == "source":
+        unusable["source"] = ""
+    else:
+        unusable["title"] = ""
+    cached = {"news": [dict(current)], "events": [dict(current)]}
+    cached[kind] = [unusable]
+    context = {"enriched": True, "quote": {"price": 10}, "fundamentals": {"status": "ok"}}
+    payload = {"code": "000001", "dsa_context": context}
+    for category, items in cached.items():
+        if location == "top_level":
+            payload[f"dsa_{category}"] = items
+        else:
+            context[category] = {"success": True, "results": items}
+    monkeypatch.setattr(service, "_get_dsa_fetcher_manager", lambda: Mock(get_stock_name=Mock(return_value="Name")))
+    searches = {}
+    for category in ("news", "events"):
+        searches[category] = Mock(return_value={"success": True, "results": [dict(current)]})
+        monkeypatch.setattr(service, f"search_dsa_stock_{category}", searches[category])
+    quote = Mock(side_effect=AssertionError("existing quote must be reused"))
+    fundamental = Mock(side_effect=AssertionError("existing fundamentals must be reused"))
+    monkeypatch.setattr(service, "get_dsa_realtime_quote", quote)
+    monkeypatch.setattr(service, "get_dsa_fundamental_context", fundamental)
+
+    candidates, _ = _enrich_candidates_with_dsa([_normalize_candidate(payload, 1)])
+    result = _attach_candidate_explanations(candidates[0])
+    searches[kind].assert_called_once()
+    searches["events" if kind == "news" else "news"].assert_not_called()
+    quote.assert_not_called()
+    fundamental.assert_not_called()
+    assert {item["code"] for item in result["why_now"]} == {"news", "event"}
+    assert all(item["quality"] == "observed" for item in result["why_now"])
+
+
+def test_failed_refresh_keeps_stale_evidence_out_of_why_now(monkeypatch):
+    from src.services import screening_service as service
+
+    old = {"title": "stale", "source": "provider", "published_date": "2000-01-01"}
+    payload = {"code": "000001", "dsa_news": [old], "dsa_events": [old],
+               "dsa_context": {"enriched": True, "quote": {"price": 10}, "fundamentals": {"status": "ok"}}}
+    monkeypatch.setattr(service, "_get_dsa_fetcher_manager", lambda: Mock(get_stock_name=Mock(return_value="Name")))
+    monkeypatch.setattr(service, "search_dsa_stock_news", Mock(side_effect=RuntimeError("offline")))
+    monkeypatch.setattr(service, "search_dsa_stock_events", Mock(return_value={"success": False, "results": []}))
+    candidates, metadata = _enrich_candidates_with_dsa([_normalize_candidate(payload, 1)])
+    result = _attach_candidate_explanations(candidates[0])
+    assert [item["code"] for item in result["why_now"]] == ["awaiting_evidence"]
+    assert result["explanation_quality"]["why_now"] == "unknown"
+    assert any("offline" in warning for warning in metadata["warnings"])
