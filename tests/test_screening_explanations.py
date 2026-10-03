@@ -711,6 +711,38 @@ def test_refresh_unusable_pre_enrichment_before_why_now(monkeypatch, location, m
     assert all(item["quality"] == "observed" for item in result["why_now"])
 
 
+@pytest.mark.parametrize("location", ["top_level", "context"])
+@pytest.mark.parametrize("text_fields", [
+    {"title": "current evidence"},
+    {"snippet": "current evidence"},
+    {"title": "   ", "snippet": "current evidence"},
+])
+def test_usable_pre_enrichment_skips_refresh(monkeypatch, location, text_fields):
+    from src.services import screening_service as service
+
+    current = {**text_fields, "source": "provider",
+               "published_date": datetime.now().date().isoformat()}
+    context = {"enriched": True, "warnings": ["cached warning"]}
+    payload = {"code": "000001", "dsa_context": context}
+    for kind in ("news", "events"):
+        if location == "top_level":
+            payload[f"dsa_{kind}"] = [dict(current)]
+        else:
+            context[kind] = {"success": True, "results": [dict(current)]}
+    builder = Mock(side_effect=AssertionError("usable cached evidence must be reused"))
+    monkeypatch.setattr(service, "_build_dsa_candidate_context", builder)
+
+    candidates, metadata = _enrich_candidates_with_dsa([_normalize_candidate(payload, 1)])
+
+    builder.assert_not_called()
+    assert metadata["enriched_count"] == 1
+    assert metadata["warnings"] == ["cached warning"]
+    result = _attach_candidate_explanations(candidates[0])
+    assert {item["code"] for item in result["why_now"]} == {"news", "event"}
+    assert {item["text"] for item in result["why_now"]} == {"消息：current evidence", "事件：current evidence"}
+    assert result["explanation_quality"]["why_now"] == "ok"
+
+
 def test_failed_refresh_keeps_stale_evidence_out_of_why_now(monkeypatch):
     from src.services import screening_service as service
 

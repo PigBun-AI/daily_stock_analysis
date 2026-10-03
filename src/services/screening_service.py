@@ -3510,9 +3510,13 @@ def _is_usable_timing_evidence(item: Any) -> bool:
     return (
         isinstance(item, dict)
         and bool(str(item.get("source") or "").strip())
-        and bool(str(item.get("title") or item.get("snippet") or "").strip())
+        and bool(_timing_evidence_text(item))
         and _is_recent_explanation_item(item)
     )
+
+
+def _timing_evidence_text(item: Dict[str, Any]) -> str:
+    return str(item.get("title") or "").strip() or str(item.get("snippet") or "").strip()
 
 
 def _news_has_results(news: Any) -> bool:
@@ -4018,7 +4022,7 @@ def _attach_candidate_explanations(
             why_now.append(
                 _explanation_item(
                     "news",
-                    f"消息：{str(news.get('title') or news.get('snippet')).strip()}",
+                    f"消息：{_timing_evidence_text(news)}",
                     source=str(news.get("source")).strip(),
                     quality="observed",
                 )
@@ -4038,7 +4042,7 @@ def _attach_candidate_explanations(
             why_now.append(
                 _explanation_item(
                     "event",
-                    f"事件：{str(event.get('title') or event.get('snippet')).strip()}",
+                    f"事件：{_timing_evidence_text(event)}",
                     source=str(event.get("source")).strip(),
                     quality="observed",
                 )

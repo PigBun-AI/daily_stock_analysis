@@ -7,6 +7,7 @@ import json
 import unittest
 from itertools import product
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.config import Config
@@ -27,6 +28,65 @@ class ScreeningHistoryTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         DatabaseManager.reset_instance()
+
+    def test_pre_enriched_news_refresh_survives_screen_and_history(self) -> None:
+        """Keep the refresh gates and search-response adapter real through persistence."""
+        for published_date, location, kind, title in product(
+            ("2000-01-01", None), ("top_level", "context"), ("news", "events"),
+            ("Current evidence", "   "),
+        ):
+            with self.subTest(published_date=published_date, location=location, kind=kind, title=title):
+                current = {
+                    "title": title, "snippet": "Current evidence", "source": "provider",
+                    "published_date": datetime.now().date().isoformat(),
+                }
+                cached = {"news": [dict(current)], "events": [dict(current)]}
+                cached[kind] = [{**current, "title": "Old evidence", "published_date": published_date}]
+                context = {
+                    "enriched": True, "quote": {"price": 10},
+                    "fundamentals": {"status": "ok"},
+                }
+                candidate = {"code": "000001", "name": "Name", "dsa_context": context}
+                for category, items in cached.items():
+                    if location == "top_level":
+                        candidate[f"dsa_{category}"] = items
+                    else:
+                        context[category] = {"success": True, "results": items}
+                provider = Mock(is_available=True)
+                provider_response = SimpleNamespace(success=True, results=[SimpleNamespace(**current)])
+                provider.search_stock_news.return_value = provider_response
+                provider.search_stock_events.return_value = provider_response
+                service = ScreeningService(self.config, db_manager=self.db)
+                with (
+                    patch("src.services.screening_service._get_screening_status_snapshot", return_value=({}, True, None)),
+                    patch("src.services.screening_service._call_screening_screen", return_value={"candidates": [candidate]}),
+                    patch("src.services.screening_service._get_dsa_search_service", return_value=provider),
+                    patch("src.services.screening_service._get_dsa_fetcher_manager", return_value=Mock()),
+                    patch("src.services.screening_service.get_dsa_realtime_quote") as quote_fetch,
+                    patch("src.services.screening_service.get_dsa_fundamental_context") as fundamental_fetch,
+                ):
+                    response = service.screen(strategy="dual_low", market="cn", max_results=1)
+
+                if kind == "news":
+                    provider.search_stock_news.assert_called_once_with("000001", "Name", max_results=3)
+                    provider.search_stock_events.assert_not_called()
+                else:
+                    provider.search_stock_events.assert_called_once_with("000001", "Name")
+                    provider.search_stock_news.assert_not_called()
+                quote_fetch.assert_not_called()
+                fundamental_fetch.assert_not_called()
+                selected = response["candidates"][0]
+                self.assertEqual(selected["dsa_context"]["quote"], context["quote"])
+                self.assertEqual(selected["dsa_context"]["fundamentals"], context["fundamentals"])
+                self.assertEqual(selected["explanation_quality"]["why_now"], "ok")
+                self.assertEqual(selected["why_now"], [
+                    {"code": "news", "text": "消息：Current evidence", "source": "provider", "quality": "observed"},
+                    {"code": "event", "text": "事件：Current evidence", "source": "provider", "quality": "observed"},
+                ])
+                self.assertEqual(response["dsa_enrichment"]["enriched_count"], 1)
+                self.assertEqual(response["dsa_enrichment"]["warnings"], [])
+                history = service.history_detail(response["run_id"])
+                self.assertEqual(history["result"]["candidates"][0], selected)
 
     def test_thesis_only_ranking_survives_fallback_screen_and_history(self) -> None:
         for fallback in ("none", "local_factors", "scorecard"):
