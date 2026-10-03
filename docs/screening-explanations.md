@@ -64,3 +64,7 @@
 成功接受的 LLM 排序结果即使省略 reason/thesis（包括仅 risk、仅 code 的合法响应），仍以 llm/inferred 显示“模型已参与排序（未提供入选理由）”，整体 Why Selected 为 partial；真实 0 分仍算模型输入。风险文本只保留在风险区，失败后回退的纯因子结果不添加模型参与项。
 
 回归验证使用双候选实际重排，覆盖缺省分数、零分及 risk-only 响应；重排后每个候选的本地加权因子保持 observed，模型参与项保持 inferred，重复归一化后综合质量仍为 partial。
+
+### 浏览器测试入口隔离
+
+`npm run test:smoke` 使用默认 `playwright.config.ts`，明确排除 `e2e/fixtures/`；未设置 `DSA_WEB_SMOKE_PASSWORD` 时继续跳过需要登录的 smoke，不启动后端/Web 服务。选股的 5 个 API mock fixture 仅通过 `npx playwright test --config playwright.fixture.config.ts` 运行，该配置独立启动 Web 服务，不需要密码或后端。CI 同时执行无密码默认入口与专用 fixture 入口，避免仅专用配置通过掩盖默认入口回归。
