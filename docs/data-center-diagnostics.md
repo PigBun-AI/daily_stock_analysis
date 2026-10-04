@@ -4,7 +4,7 @@ Web 数据中心位于 `/data`，用于只读查看数据源能力、数据集�
 
 ## 页面内容
 
-- Provider 能力：是否启用、是否已配置、运行状态，以及 `dataset_markets` 给出的精确数据集/市场支持关系。
+- Provider 能力：卡片展示运行状态及 `dataset_markets` 给出的精确数据集/市场支持关系；页面顶部汇总已配置的 Provider 数量，不在卡片中单独展示 enabled/configured 标志。
 - 数据集质量：`ok`、`degraded`、`partial`、`unconfigured`、`unavailable`、`unknown`、`stale`，以及当前来源、最近成功时间和脱敏诊断。
 - 路由优先级：每个运行场景的 provider 顺序及其配置来源。
 - Overview warnings：接口认为需要关注、但不应阻断其他块展示的警告代码。
