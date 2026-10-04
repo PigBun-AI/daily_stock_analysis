@@ -18,6 +18,11 @@ async function fixture(page: Page, requireLogin = false) {
   ];
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    // Vite source modules also contain /api/; only intercept HTTP API paths.
+    if (!path.startsWith('/api/')) {
+      await route.continue();
+      return;
+    }
     if (path === '/api/v1/auth/login') loggedIn = true;
     const json = path === '/api/v1/auth/status'
       ? { authEnabled: requireLogin, loggedIn, passwordSet: true, setupState: 'enabled' }
