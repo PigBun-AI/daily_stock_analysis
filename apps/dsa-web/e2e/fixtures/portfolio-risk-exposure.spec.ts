@@ -114,13 +114,19 @@ for (const state of ['complete', 'missing-price', 'snapshot-error', 'invalid-top
     for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      if (state === 'rounded-tail') {
-        // Recharts uses a JavaScript animation, so screenshot animations:disabled
-        // does not wait for its 100% single-sector geometry to finish.
-        await expect.poll(async () => {
-          const bounds = await page.locator('.recharts-pie-sector path').boundingBox();
-          return !!bounds && bounds.width > 175 && bounds.height > 175;
-        }).toBe(true);
+      // Screenshot animations:disabled does not stop Recharts' JavaScript animation.
+      // Assert every expected sector has its final arc (outerRadius=90, no inner
+      // radius/padding), including the position fallback in invalid-sector.
+      const weights = state === 'rounded-tail' ? [100]
+        : state === 'complete' || state === 'invalid-sector' ? [60, 40] : [];
+      const sectors = page.locator('.recharts-pie-sector path');
+      await expect(sectors).toHaveCount(weights.length);
+      for (const [index, weight] of weights.entries()) {
+        const expectedLength = 180 + 90 * Math.PI * 2 * weight / 100;
+        await expect.poll(async () => Math.abs(
+          await sectors.nth(index).evaluate((path) => (path as SVGPathElement).getTotalLength())
+          - expectedLength,
+        )).toBeLessThan(0.5);
       }
       const screenshot = testInfo.outputPath(`portfolio-${state}-${viewport.width}.png`);
       await dashboard.screenshot({ path: screenshot, animations: 'disabled' });

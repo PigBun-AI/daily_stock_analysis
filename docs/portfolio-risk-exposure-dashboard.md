@@ -46,5 +46,5 @@ Web 持仓页新增“风险与暴露看板”，放在组合总览指标和持�
 
 `cd apps/dsa-web && npx playwright install chromium && npx playwright test --config playwright.fixture.config.ts`
 运行真实组合页面的 mock API 浏览器用例，覆盖完整多市场数据、缺价、快照失败、错误个股/行业 Top1、真实空组合以及合法零权重尾行。
-每种状态生成 1440px 桌面与 390px 窄屏截图，校验无页面横向溢出。
+每种状态生成 1440px 桌面与 390px 窄屏截图，校验无页面横向溢出。截图前逐个验证完整数据、无效行业回退及舍入零尾行的扇区数量与最终 SVG 弧长，避免 Recharts JavaScript 动画的中间帧进入证据；无有效集中度的状态必须没有扇区。
 产物在 `apps/dsa-web/test-results/fixtures/`，CI 的 `web-gate` 同步上传 `web-ui-evidence-<head SHA>` artifact；一次性截图不入库。
