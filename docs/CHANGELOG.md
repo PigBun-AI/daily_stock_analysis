@@ -8,8 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] 默认 Web smoke 排除独立 fixture 目录，避免无密码且未启动 Web 服务时错误收集选股用例；CI 同时验收默认和 fixture 入口。
+- [测试] 强化无理由 LLM 排序回归，验证双候选实际重排（含缺省和零分、risk-only 响应）后保留本地 observed 因子、模型 inferred 标记与 partial 综合质量。
+- [修复] 选股时点证据标题为空白但摘要有效时复用近期缓存，Why Now 展示有效摘要，避免误刷新和证据丢失。
+- [测试] 补充预填过期/无日期新闻与事件的 screen 入口回归，覆盖真实搜索响应归一化、单类刷新、历史持久化及有效缓存跳过补充。
+- [修复] 无入选理由的合法 LLM 排序保留 inferred 参与标记，避免仅展示本地因子而误报全 observed；风险文本保持独立。
+- [修复] 选股预补充新闻/事件与 Why Now 共用时效及来源校验，单独刷新无效缓存，失败保持 unknown 与告警。
+- [修复] 选股后分析器完成非零调分但未提供摘要（含 null 和空白摘要）时，Why Selected 保留分析器来源、质量与调分说明，并在归一化、服务响应和历史记录中保留完成状态及分差。
+- [测试] 补充仅返回 thesis 的 LLM 排序回归，验证真实重排后模型论点与本地因子、后分析摘要共存，并完整保留在服务响应及历史记录中。
+- [测试] 补充选股后分析真实调分与重排回归，验证显式 LLM 排名理由与 scorecard、DSA、external_http 摘要来源共存，以及服务返回和历史持久化一致。
 
-- [测试] 自选股信号补齐与资产类型选择共存的回归及桌面/窄屏浏览器截图验收，保留运行中任务去重。
+- [改进] Web 首页自选股列表新增“变化 / 状态 / 下一步”三段信号，按今日分析、历史报告、运行任务和详情查询状态提示下一步操作；“仅未分析”复用计数与提交规则，排除运行中任务，兼容股票/指数身份。
+- [改进] 研究证据保留来源观测与抓取时间，数据可用不再自动标为 fresh；缺少明确时效判定时返回 unknown，保留上游 stale 与旧报告兼容。
+- [修复] AkShare 基本面财务包、资金流和龙虎榜超时后，在真实后台任务结束前按操作跨管理器抑制重复请求，避免连续分析不断占用后台槽位；正常并发与其他数据块继续执行，任务退出后自动恢复。
+
+- [修复] 基本面请求诊断用单调时钟记录实际等待耗时，线程池拒绝和超时不再把完整超时预算写入 duration_ms。
+- [测试] 告警来源提示改用无后台、无密钥的确定性浏览器验收，CI 保存桌面与窄屏截图。
+- [修复] macOS 后端显式收集选股策略 YAML 资源，并以真实 Bash 参数构造测试保护 PyInstaller 隐藏导入和入口参数。
 
 - [修复] 个股资金流按沪深北市场请求并取最新有效交易日的主力净流入金额；去掉默认股票和市场排名的错误降级，行业排名仅使用有限金额，行业金额全部缺失或非有限时仍保留有效个股结果。
 
@@ -31,10 +46,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 将仓库内所有 SerpApi 链接统一更新为新的赞助转化追踪地址。
 - [修复] Codex 问股将当前激活的交易 Skill 指令传入最终请求，保留会话继承、显式清空及默认技能语义；限定在三个已保存数据工具内执行，缺失数据或能力时明确披露。
 - [修复] 智能导入兼容带 UTF-8 BOM 的 CSV 与剪贴板文本，避免 `code` 表头被误当成数据并丢失有效股票代码。
+- [新功能] Agent 新增 FXMacroData 官方宏观数据工具；USD 基础数据无需密钥，`00-daily-analysis.yml` 已映射可选的 `FXMACRODATA_API_KEY` Secret；Windows/macOS 桌面构建收集客户端内置操作目录，并在冻结产物中校验 Agent 工具注册表。
 - [修复] 为 AkShare 大盘涨跌统计的东财与新浪降级调用增加可强制终止的子进程超时，避免外部接口无响应时长期占用分析线程（Fixes #2340）。
+- [新功能] 新增 Requesty（OpenAI Compatible 聚合网关）渠道预设：Web 模板、`.env.example` 示例、`00-daily-analysis.yml` 的 `LLM_REQUESTY_*` 映射与服务商文档同步补齐；`requesty.ai` Base URL 下「获取模型」返回的 vendor/model ID 自动保留 `openai/` 网关路由，避免被误判为 LiteLLM 直连 provider。
+
+- [修复] CLI 与 Web/API 每日调度共享 SQLite 计划时刻认领，避免同一数据库上的并发或错峰定时推送重复；保留不同时间点/分析范围及手动补跑，明确失败后的至多一次派发语义（Fixes #2349）。
+- [修复] 告警列表披露有效环境规则及后台去重后的数量，提示页面删除或禁用不会停用环境规则；保留原有加载、执行和通知语义。
+- [修复] 告警来源统计以只读方式展开持仓，避免列表请求查询实时行情或重写持仓缓存、批次和每日快照，保留后台优先级、数量上限及去重语义。
+- [修复] 告警来源统计在单次列表请求内复用相同目标的展开结果及失败，避免多条持仓规则重复回放账本；缓存不跨请求，保留最新持仓、失败重试与原有去重数量语义。
+- [新功能] 新增 `/api/v1/screening/screen/check`，对调用方提供的单条快照逐项解释策略硬过滤条件、阈值、当前值与通过/失败/缺失状态，不抓取行情、不调用模型、不改变既有选股结果。
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [修复] 告警规则创建、启停或删除期间切换筛选或分页后，列表刷新使用当前筛选条件，避免旧请求闭包覆盖当前视图。
 
 ## [3.32.0] - 2026-09-06
 
@@ -65,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - [修复] 美股日线路由现按各数据源当前优先级排序，单项 `*_PRIORITY` 配置（如 `YFINANCE_PRIORITY=0`）对美股即时生效；指数固定首选与 Longbridge preferred 语义保持不变
 
+- [新功能] 选股候选新增后端生成的 Why Selected / Why Now 解释、来源与质量状态，Web 统一展示并区分真实 0 与无来源的缺失占位值；旧版历史摘要保留为来源未记录/unknown，不重新评分或回写记录；模型 reason/thesis 与不同来源同文案均保留逐条 provenance。
 - [新功能] 新增个股研究聚合 API，以统一 canonical code 返回行情、历史、研究产物、资讯、缓存持仓关系和监控规则，并对每个块独立标记 fresh/partial/unavailable。
 - [修复] 个股研究聚合拒绝交易所冲突的股票身份，在市场限定后无历史候选时保持空结果，兼容市场限定裸码与混合大小写旧数据，并从独立基本面快照补齐 ResearchArtifact 的财报与分红证据。
 
@@ -81,9 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Linux/Docker 分享图补齐 Noto CJK 字体与中韩文字体栈，避免 PNG 只显示数字和英文、中文或韩文内容消失。
 - [修复] 股票名称归一：AkShare 部分名称带无意义内嵌空格（“五 粮 液”、“万  科Ａ”）与全角宽度拼写（“京东方Ａ” 的全角 Ａ），统一经 `_normalize_stock_name()` 做 NFKC 宽度归一 + 去空白（原 `_compact_stock_name` 仅去空白）：本地映射初值、`_build_name_map_from_df()` 构建与 `extend_AkShare()` 合并、磁盘缓存加载三个入库口（含归一后为空的条目守卫）与 `resolver_name_to_code_list()` / `is_known_stock_name()` / `resolve_name_to_code()` 三个查询入口同源归一；消除空格/全角拼写与本地无空格半角拼写比较不相等造成的假性改名别名，源形态输入（带空格/全角）与常规拼写同样可解析，覆盖 `/analyze` API、按名称导入与 Bot 文本解析等全部调用路径；全角拼写此前与分词管道 NFKC 归一后的半角输入（“京东方A”）永不相等——全名精确匹配落空且会被更短库内名误切出错误实体（“京东”），归一后半角/全角输入产出一致、展示名统一为归一拼写；磁盘缓存中的历史未归一数据（带空格/全角）经合并与加载入口自动归一，无需迁移。
 - [新功能] Web Chat 意图识别层新增分词模块：`web_intent_tokenizer` 六步管道（多股票全名实体扫描 → 标点/空白切分 → 代码形提取 → 市场关键词 → 无歧义关键词 → 残存 gap 多策略 DFS 匹配）把用户消息切分为携带语义标签的 Token 序列；配套 `web_intent_types` 数据字典（Token 结构、Market 枚举、21 个语义 tag、clean/extend 双词池与正则机器）。核心原则"宁可不做，不可做错"：Step 1~5 只做精确匹配，Step 6 要求整段 TAG 全覆盖（交叉验证）才产出，未覆盖片段保持空 tag 交下游 LLM 兜底；代码形 token 辨认为 `stock_code`（附 code/name/market 三元组）/ `wrong_{market}_code` / `unknown_{market}_code` 三态，token 层代码拼写统一 canonical 归一（a=6 位裸数字、hk=HK+5 位、us=大写 ticker）。意图枚举与意图识别结果随后续 `web_intent_resolver` PR 引入。新增 183 个分词单元测试。
-- [改进] Web 首页自选股列表新增“变化 / 状态 / 下一步”三段信号，按今日分析、历史报告、运行任务和详情查询状态提示下一步操作。
-<!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
-<!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [新功能] 完善 Futu OpenD 港股数据源接入：系统设置支持 OpenD 地址、端口和港股实时数据源优先级，保留 Longbridge、AkShare、YFinance fallback。
 - [测试] 增加 Futu 配置 schema、港股实时路由和 fallback 契约覆盖。
 
