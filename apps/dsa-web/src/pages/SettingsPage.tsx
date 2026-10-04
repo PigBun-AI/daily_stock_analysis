@@ -1,7 +1,8 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ChevronDown, CircleAlert, CircleDashed, Clock, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useBlocker, useLocation } from 'react-router-dom';
+import type { Location } from 'react-router-dom';
 import { useAuth, useDesktopUpdate, useSystemConfig } from '../hooks';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
 import { createParsedApiError, getParsedApiError, type ParsedApiError } from '../api/error';
@@ -402,6 +403,7 @@ type SchedulerSettingsCardProps = {
   disabled: boolean;
   issueByKey: Record<string, ConfigValidationIssue[]>;
   statusRefreshToken: number;
+  draftResetToken: number;
   onChange: (key: string, value: string) => void;
   onSchedulerStateChange?: (payload: {
     runtimeEnabled: boolean | null;
@@ -416,6 +418,7 @@ const SchedulerSettingsCard: React.FC<SchedulerSettingsCardProps> = ({
   disabled,
   issueByKey,
   statusRefreshToken,
+  draftResetToken,
   onChange,
   onSchedulerStateChange,
   t,
@@ -431,7 +434,10 @@ const SchedulerSettingsCard: React.FC<SchedulerSettingsCardProps> = ({
   const [statusError, setStatusError] = useState<ParsedApiError | null>(null);
   const [runNowError, setRunNowError] = useState<ParsedApiError | null>(null);
   const [runNowSuccess, setRunNowSuccess] = useState('');
-  const [scheduleEnabledOverride, setScheduleEnabledOverride] = useState<boolean | null>(null);
+  const [scheduleEnabledDraft, setScheduleEnabledDraft] = useState<{ token: number; value: boolean } | null>(null);
+  const scheduleEnabledOverride = scheduleEnabledDraft?.token === draftResetToken
+    ? scheduleEnabledDraft.value
+    : null;
 
   const refreshSchedulerStatus = useCallback(async () => {
     setStatusError(null);
@@ -524,7 +530,7 @@ const SchedulerSettingsCard: React.FC<SchedulerSettingsCardProps> = ({
                     disabled={disabled || !scheduleEnabledItem?.schema?.isEditable}
                     onChange={(event) => {
                       const nextEnabled = Boolean(event.target.checked);
-                      setScheduleEnabledOverride(nextEnabled);
+                      setScheduleEnabledDraft({ token: draftResetToken, value: nextEnabled });
                       onChange('SCHEDULE_ENABLED', nextEnabled ? 'true' : 'false');
                     }}
                   />
@@ -697,6 +703,9 @@ const SettingsPage: React.FC = () => {
   const [isRunningSetupSmoke, setIsRunningSetupSmoke] = useState(false);
   const [setupSmokeError, setSetupSmokeError] = useState<ParsedApiError | null>(null);
   const [setupSmokeSuccess, setSetupSmokeSuccess] = useState('');
+  const [localDraftResetToken, setLocalDraftResetToken] = useState(0);
+  const [llmChannelHasDirty, setLlmChannelHasDirty] = useState(false);
+  const [llmChannelIsSaving, setLlmChannelIsSaving] = useState(false);
   const [llmChannelDraftItems, setLlmChannelDraftItems] = useState<SystemConfigUpdateItem[]>([]);
   const envBackupImportRef = useRef<HTMLInputElement | null>(null);
   const setupStatusRequestIdRef = useRef(0);
@@ -852,7 +861,55 @@ const SettingsPage: React.FC = () => {
   const hasRuntimeSchedulerMismatchInDraft = hasRuntimeSchedulerMismatch
     && !currentChangedItems.some((item) => item.key === 'SCHEDULE_ENABLED');
   const effectiveHasDirty = hasDirty || hasRuntimeSchedulerMismatchInDraft;
+  const hasUnsavedEdits = effectiveHasDirty || llmChannelHasDirty;
+  const hasPendingSave = isSaving || llmChannelIsSaving;
+  const shouldGuardDeparture = hasUnsavedEdits || hasPendingSave;
+  const resetAllDrafts = () => {
+    if (hasPendingSave) {
+      return;
+    }
+    resetDraft();
+    setSchedulerOverrideFromUi(null);
+    setLlmChannelDraftItems([]);
+    setLlmChannelHasDirty(false);
+    setLocalDraftResetToken((current) => current + 1);
+  };
   const effectiveDirtyCount = dirtyCount + (hasRuntimeSchedulerMismatchInDraft ? 1 : 0);
+
+  // Guard every draft owner, including editor-local changes that are not yet
+  // serializable as valid configuration update items.
+  useEffect(() => {
+    if (!shouldGuardDeparture) {
+      return;
+    }
+    const handler = (event: BeforeUnloadEvent) => {
+      // preventDefault is the modern cancellation signal; returnValue keeps
+      // compatibility with browsers using the legacy beforeunload contract.
+      event.preventDefault();
+      event.returnValue = t('settings.unsavedChangesMessage');
+      return event.returnValue;
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => {
+      window.removeEventListener('beforeunload', handler);
+    };
+  }, [shouldGuardDeparture, t]);
+
+  // Category changes stay within /settings; leaving through browser history
+  // or an in-app link must use the same complete dirty-state predicate.
+  const settingsBlocker = useBlocker(
+    useCallback(
+      ({ currentLocation, nextLocation }: { currentLocation: Location; nextLocation: Location }) =>
+        shouldGuardDeparture && nextLocation.pathname !== '/settings'
+        // Only block when actually leaving /settings. Reload-stay on
+        // /settings?foo=bar (search-only change on the same pathname) would
+        // otherwise prompt unnecessarily.
+        ? nextLocation.pathname !== currentLocation.pathname
+        : false,
+      [shouldGuardDeparture],
+    ),
+  );
+
 
   const handleSchedulerRuntimeStateChange = useCallback(({ runtimeEnabled, overrideEnabled }: {
     runtimeEnabled: boolean | null;
@@ -953,9 +1010,12 @@ const SettingsPage: React.FC = () => {
   };
 
   const beginEnvBackupImport = () => {
+    if (hasPendingSave) {
+      return;
+    }
     setEnvBackupActionError(null);
     setEnvBackupActionSuccess('');
-    if (hasDirty) {
+    if (hasUnsavedEdits) {
       setShowImportConfirm(true);
       return;
     }
@@ -966,7 +1026,7 @@ const SettingsPage: React.FC = () => {
     const file = event.target.files?.[0];
     event.target.value = '';
     setShowImportConfirm(false);
-    if (!file) {
+    if (!file || hasPendingSave) {
       return;
     }
 
@@ -1222,8 +1282,8 @@ const SettingsPage: React.FC = () => {
               variant="settings-secondary"
               size="sm"
               className="px-2.5"
-              onClick={resetDraft}
-              disabled={isLoading || isSaving}
+              onClick={resetAllDrafts}
+              disabled={isLoading || hasPendingSave}
             >
               <RefreshCw className="h-4 w-4" aria-hidden="true" />
               {t('settings.reset')}
@@ -1341,9 +1401,11 @@ const SettingsPage: React.FC = () => {
               </SettingsSectionCard>
             ) : null}
             {activeCategory === 'system' ? <AuthSettingsCard /> : null}
-            {activeCategory === 'system' ? (
+            {activeCategory === 'system' || schedulerOverrideFromUi !== null ? (
+              <div hidden={activeCategory !== 'system'}>
               <SchedulerSettingsCard
-                items={rawActiveItems}
+                draftResetToken={localDraftResetToken}
+                items={itemsByCategory.system || []}
                 disabled={isSaving || isLoading}
                 issueByKey={issueByKey}
                 statusRefreshToken={schedulerStatusRefreshToken}
@@ -1352,6 +1414,7 @@ const SettingsPage: React.FC = () => {
                 t={t}
                 language={uiLanguage}
               />
+              </div>
             ) : null}
             {activeCategory === 'system' ? (
               <div id="desktop-version-info">
@@ -1475,7 +1538,7 @@ const SettingsPage: React.FC = () => {
                       type="button"
                       variant="settings-primary"
                       onClick={beginEnvBackupImport}
-                      disabled={envBackupActionDisabled}
+                      disabled={envBackupActionDisabled || hasPendingSave}
                       isLoading={isImportingEnv}
                       loadingText={t('settings.importingEnv')}
                     >
@@ -1529,7 +1592,8 @@ const SettingsPage: React.FC = () => {
                 />
               </SettingsSectionCard>
             ) : null}
-            {activeCategory === 'ai_model' ? (
+            {activeCategory === 'ai_model' || llmChannelHasDirty || llmChannelIsSaving ? (
+              <div hidden={activeCategory !== 'ai_model'}>
               <SettingsSectionCard
                 title={t('settings.llmAccess')}
                 description={t('settings.llmAccessDescription')}
@@ -1540,7 +1604,10 @@ const SettingsPage: React.FC = () => {
                   disabled={isSaving || isLoading}
                 />
                 <LLMChannelEditor
-                  items={rawActiveItems}
+                  draftResetToken={localDraftResetToken}
+                  onDirtyChange={setLlmChannelHasDirty}
+                  onSavingChange={setLlmChannelIsSaving}
+                  items={itemsByCategory.ai_model || []}
                   configVersion={configVersion}
                   maskToken={maskToken}
                   modelProviderPrefixes={llmModelProviders}
@@ -1553,6 +1620,7 @@ const SettingsPage: React.FC = () => {
                   disabled={isSaving || isLoading}
                 />
               </SettingsSectionCard>
+              </div>
             ) : null}
             {activeCategory === 'system' && passwordChangeable ? (
               <ChangePasswordCard />
@@ -1625,12 +1693,34 @@ const SettingsPage: React.FC = () => {
         message={t('settings.importConfirmMessage')}
         confirmText={t('settings.importConfirmContinue')}
         cancelText={t('common.cancel')}
+        confirmDisabled={hasPendingSave}
         onConfirm={() => {
+          if (hasPendingSave) {
+            return;
+          }
           setShowImportConfirm(false);
           envBackupImportRef.current?.click();
         }}
         onCancel={() => {
           setShowImportConfirm(false);
+        }}
+      />
+      <ConfirmDialog
+        isOpen={settingsBlocker.state === 'blocked'}
+        title={t(hasPendingSave ? 'settings.saving' : hasUnsavedEdits ? 'settings.unsavedChangesTitle' : 'settings.actionSuccess')}
+        message={t(hasPendingSave ? 'settings.pendingSaveLeaveMessage' : hasUnsavedEdits ? 'settings.unsavedChangesMessage' : 'settings.savedChangesLeaveMessage')}
+        confirmText={t(hasPendingSave ? 'settings.saving' : hasUnsavedEdits ? 'settings.unsavedChangesDiscard' : 'common.confirm')}
+        cancelText={t('common.cancel')}
+        confirmDisabled={hasPendingSave}
+        onConfirm={() => {
+          if (hasPendingSave) {
+            return;
+          }
+          resetAllDrafts();
+          settingsBlocker.proceed?.();
+        }}
+        onCancel={() => {
+          settingsBlocker.reset?.();
         }}
       />
     </div>
