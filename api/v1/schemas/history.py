@@ -52,6 +52,10 @@ class HistoryItem(BaseModel):
         description="本次分析市场阶段低敏摘要",
     )
     created_at: Optional[str] = Field(None, description="创建时间")
+    asset_type: Optional[Literal["stock", "index"]] = Field(
+        None,
+        description="后端权威资产类型（stock/index）；由持久化代码经 parser 生成。旧客户端与 market review 可缺省。",
+    )
 
     model_config = ConfigDict(json_schema_extra={
         "example": {
@@ -149,6 +153,10 @@ class ReportMeta(BaseModel):
         None,
         description="本次分析市场阶段低敏摘要",
     )
+    asset_type: Optional[Literal["stock", "index"]] = Field(
+        None,
+        description="后端权威资产类型（stock/index）；指数报告用于隐藏 stock-only 自选操作。market review 与旧客户端可缺省。",
+    )
 
 
 class ReportSummary(BaseModel):
@@ -199,6 +207,9 @@ class AnalysisContextPackOverviewBlock(BaseModel):
         "fetch_failed",
     ] = Field(..., description="数据块质量状态")
     source: Optional[str] = Field(None, description="数据来源")
+    timestamp: Optional[str] = Field(None, description="上下文原始时间，可能为抓取时间")
+    provider_timestamp: Optional[str] = Field(None, description="来源记录的观测时间")
+    fetched_at: Optional[str] = Field(None, description="数据抓取时间，不代表观测时间")
     warnings: List[str] = Field(default_factory=list, description="数据块告警码")
     missing_reasons: List[str] = Field(default_factory=list, description="缺失原因")
 
@@ -370,6 +381,10 @@ class StockBarItem(BaseModel):
     market_phase_summary: Optional[MarketPhaseSummary] = Field(
         None,
         description="最新分析市场阶段低敏摘要",
+    )
+    asset_type: Optional[Literal["stock", "index"]] = Field(
+        None,
+        description="后端权威资产类型（stock/index）；由持久化代码经 parser 生成。旧客户端可缺省。",
     )
     model_config = ConfigDict(json_schema_extra={
         "example": {
