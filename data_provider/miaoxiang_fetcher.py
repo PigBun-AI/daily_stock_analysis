@@ -61,6 +61,8 @@ def _parse_money_yuan(text: Any) -> Optional[float]:
     if text is None:
         return None
     s = str(text).strip().replace(",", "")
+    if "%" in s or "％" in s:
+        return None
     val = _parse_number(s)
     if val is None:
         return None
@@ -185,8 +187,9 @@ class MiaoxiangFetcher(BaseFetcher):
                 rows[idx][label] = "" if value is None else str(value)
         # 保留每行对应日期（headName），便于资金流按日聚合
         for idx, head in enumerate(heads):
-            if idx < len(rows):
-                rows[idx]["_date"] = str(head)
+            while len(rows) <= idx:
+                rows.append({})
+            rows[idx]["_date"] = str(head)
         return rows
 
     def _table_labels(self, table_dto: Dict[str, Any]) -> List[str]:
@@ -322,22 +325,28 @@ class MiaoxiangFetcher(BaseFetcher):
         except DataFetchError as exc:
             result["errors"].append(f"miaoxiang: {exc}")
             return result
-        target = self._find_table_by_label(tables, "主力净流入")
+        # Natural-language responses may include prices or ratios before the amount.
+        # Only explicit monetary metrics may feed currency-valued stock_flow fields.
+        amount_labels = {"主力净流入", "主力净流入资金", "主力净流入金额"}
+        amount_tables = [
+            table for table in tables
+            if any(label in amount_labels for label in self._table_labels(table))
+        ]
+        target = self._find_table_by_label(amount_tables, "主力净流入")
         if target is None:
             result["errors"].append("miaoxiang: no capital flow table")
             return result
 
         rows = self._table_rows(target)
-        series: List[Tuple[str, float]] = []
+        series: List[Tuple[str, Optional[float]]] = []
         for row in rows:
-            label = next((k for k in row if k != "_date"), None)
-            if label is None:
-                continue
-            value = _parse_money_yuan(row.get(label))
-            if value is not None:
-                series.append((str(row.get("_date", "")), value))
+            label = next((k for k in row if k in amount_labels), None)
+            value = _parse_money_yuan(row.get(label)) if label is not None else None
+            # Keep missing observations in their original trading window; dropping
+            # them would backfill today's value or compress a 5/10-day aggregate.
+            series.append((str(row.get("_date", "")), value))
 
-        if not series:
+        if not series or all(value is None for _, value in series):
             result["errors"].append("miaoxiang: empty capital flow series")
             return result
 
@@ -346,8 +355,14 @@ class MiaoxiangFetcher(BaseFetcher):
         latest = series[0][1]
         # 窗口字段必须拿到完整交易日数据才输出,避免把部分历史合计
         # 误标为 5日/10日净流入(稀疏历史的次新股会注入错误中期信号)
-        inflow_5d = sum(v for _, v in series[:5]) if len(series) >= 5 else None
-        inflow_10d = sum(v for _, v in series[:10]) if len(series) >= 10 else None
+        def window_sum(size: int) -> Optional[float]:
+            values = [value for _, value in series[:size]]
+            if len(values) < size or any(value is None for value in values):
+                return None
+            return sum(values)
+
+        inflow_5d = window_sum(5)
+        inflow_10d = window_sum(10)
 
         result["stock_flow"] = {
             "main_net_inflow": latest,

@@ -288,7 +288,7 @@ class TestSupplementMarketDetection:
 
     @staticmethod
     def _captured_budgets(manager, budgets):
-        def fake_run_with_retry(task, timeout_seconds, task_name):
+        def fake_run_with_retry(task, timeout_seconds, task_name, *, quarantine_key=None):
             budgets.append((task_name, float(timeout_seconds)))
             return {"stock_flow": {}, "sector_rankings": {"top": [], "bottom": []},
                     "source_chain": [], "errors": [], "status": "not_supported"}, None, int(timeout_seconds * 1000)
@@ -462,7 +462,7 @@ class TestUnifiedBudgetProbeGate:
         budgets = []
         manager = TestSupplementMarketDetection._bare_manager([MiaoxiangFetcher(api_key="test-key")])
 
-        def fake_run_with_retry(task, timeout_seconds, task_name):
+        def fake_run_with_retry(task, timeout_seconds, task_name, *, quarantine_key=None):
             budgets.append((task_name, float(timeout_seconds)))
             return {"stock_flow": {}, "sector_rankings": {"top": [], "bottom": []},
                     "source_chain": [], "errors": [], "status": "not_supported"}, None, int(timeout_seconds * 1000)
@@ -477,7 +477,7 @@ class TestUnifiedBudgetProbeGate:
         budgets = []
         manager = TestSupplementMarketDetection._bare_manager([MiaoxiangFetcher(api_key="test-key")])
 
-        def fake_run_with_retry(task, timeout_seconds, task_name):
+        def fake_run_with_retry(task, timeout_seconds, task_name, *, quarantine_key=None):
             budgets.append((task_name, float(timeout_seconds)))
             return {"stock_flow": {}, "sector_rankings": {"top": [], "bottom": []},
                     "source_chain": [], "errors": [], "status": "not_supported"}, None, int(timeout_seconds * 1000)
@@ -507,3 +507,78 @@ class TestConfigSchemaContract:
         assert field.get("data_type") == "integer"
         assert field.get("is_sensitive") is False
         assert field.get("validation", {}).get("min") == 0
+
+
+class TestCapitalFlowColumnSelection:
+    @pytest.mark.parametrize("with_price_column", [False, True])
+    @pytest.mark.parametrize("descending", [False, True])
+    def test_short_amount_column_preserves_missing_date(self, monkeypatch, with_price_column, descending):
+        indicators = {"f1": ["100万"] * 5}
+        labels = {"f1": "主力净流入资金"}
+        if with_price_column:
+            indicators["f2"] = ["13.91"] * 6
+            labels["f2"] = "收盘价"
+        dates = sorted([f"2026-08-{16 + i:02d}" for i in range(6)], reverse=descending)
+        table = _make_table(dates, indicators, labels)
+        flow = _fetcher_with_response(monkeypatch, _make_response([table])).get_capital_flow("001205")
+        if descending:  # The missing oldest observation is outside the latest five days.
+            assert flow["stock_flow"]["main_net_inflow"] == pytest.approx(1_000_000)
+            assert flow["stock_flow"]["inflow_5d"] == pytest.approx(5_000_000)
+        else:
+            assert flow["stock_flow"]["main_net_inflow"] is None
+            assert flow["stock_flow"]["inflow_5d"] is None
+
+    @pytest.mark.parametrize("ratio", ["3.5%", "3.5％"])
+    def test_percentage_is_not_a_money_value_even_under_amount_label(self, monkeypatch, ratio):
+        table = _make_table(["2026-08-21"], {"f1": [ratio]}, {"f1": "主力净流入资金"})
+        flow = _fetcher_with_response(monkeypatch, _make_response([table])).get_capital_flow("001205")
+        assert flow["stock_flow"] == {}
+
+    def test_missing_latest_amount_does_not_backfill_previous_day(self, monkeypatch):
+        table = _make_table(["2026-08-21", "2026-08-20"], {"f1": [None, "100万"]},
+                            {"f1": "主力净流入资金"})
+        flow = _fetcher_with_response(monkeypatch, _make_response([table])).get_capital_flow("001205")
+        assert flow["stock_flow"]["main_net_inflow"] is None
+        assert flow["stock_flow"]["inflow_5d"] is None
+
+    def test_missing_amount_does_not_compress_trading_window(self, monkeypatch):
+        table = _make_table(
+            [f"2026-08-{21 - i:02d}" for i in range(10)],
+            {"f1": ["100万", None] + ["100万"] * 8},
+            {"f1": "主力净流入资金"},
+        )
+        flow = _fetcher_with_response(monkeypatch, _make_response([table])).get_capital_flow("001205")
+        assert flow["stock_flow"]["main_net_inflow"] == pytest.approx(1_000_000)
+        assert flow["stock_flow"]["inflow_5d"] is None
+        assert flow["stock_flow"]["inflow_10d"] is None
+
+    @pytest.mark.parametrize("preceding_label", ["收盘价", "主力净流入占比"])
+    def test_amount_is_selected_by_label_not_column_order(self, monkeypatch, preceding_label):
+        table = _make_table(
+            ["2026-08-21", "2026-08-20", "2026-08-19", "2026-08-18", "2026-08-17"],
+            {"f1": ["13.91"] * 5, "f2": ["100万", "200万", "300万", "400万", "500万"]},
+            {"f1": preceding_label, "f2": "主力净流入资金"},
+        )
+        flow = _fetcher_with_response(monkeypatch, _make_response([table])).get_capital_flow("001205")
+        assert flow["stock_flow"]["main_net_inflow"] == pytest.approx(1_000_000)
+        assert flow["stock_flow"]["inflow_5d"] == pytest.approx(15_000_000)
+
+    def test_ratio_only_table_does_not_become_currency(self, monkeypatch):
+        table = _make_table(["2026-08-21"], {"f1": ["3.5%"]}, {"f1": "主力净流入占比"})
+        flow = _fetcher_with_response(monkeypatch, _make_response([table])).get_capital_flow("001205")
+        assert flow["status"] == "not_supported"
+        assert flow["stock_flow"] == {}
+
+    def test_missing_amount_never_falls_back_to_closing_price(self, monkeypatch):
+        table = _make_table(["2026-08-21"], {"f1": ["13.91"], "f2": [None]},
+                            {"f1": "收盘价", "f2": "主力净流入资金"})
+        flow = _fetcher_with_response(monkeypatch, _make_response([table])).get_capital_flow("001205")
+        assert flow["status"] == "not_supported"
+        assert flow["stock_flow"] == {}
+
+    def test_longer_ratio_table_cannot_hide_amount_table(self, monkeypatch):
+        ratio = _make_table(["2026-08-21", "2026-08-20"], {"f1": ["3%", "4%"]},
+                            {"f1": "主力净流入占比"})
+        amount = _make_table(["2026-08-21"], {"f1": ["100万"]}, {"f1": "主力净流入资金"})
+        flow = _fetcher_with_response(monkeypatch, _make_response([ratio, amount])).get_capital_flow("001205")
+        assert flow["stock_flow"]["main_net_inflow"] == pytest.approx(1_000_000)
