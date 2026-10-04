@@ -701,7 +701,8 @@ def test_static_openapi_matches_stock_profile_runtime_contract() -> None:
     api_path = "/api/v1/stocks/{stock_code}/profile"
     assert static_spec["paths"][api_path] == runtime_spec["paths"][api_path]
     schema_names = [
-        name for name in runtime_spec["components"]["schemas"] if name.startswith("StockProfile")
+        name for name in runtime_spec["components"]["schemas"]
+        if name.startswith("StockProfile") or name == "AnalysisContextPackOverviewBlock"
     ]
     assert schema_names
     for schema_name in schema_names:
