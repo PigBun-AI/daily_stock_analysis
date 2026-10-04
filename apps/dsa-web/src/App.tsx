@@ -15,6 +15,7 @@ import {
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { UiLanguageProvider, useUiLanguage } from './contexts/UiLanguageContext';
 import { useAgentChatStore } from './stores/agentChatStore';
+import { resolveLoginRedirect } from './utils/loginRedirect';
 import './App.css';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -28,6 +29,7 @@ const DecisionSignalsPage = lazy(() => import('./pages/DecisionSignalsPage'));
 const AlertsPage = lazy(() => import('./pages/AlertsPage'));
 const TokenUsagePage = lazy(() => import('./pages/TokenUsagePage'));
 const StockScreeningPage = lazy(() => import('./pages/StockScreeningPage'));
+const DataCenterPage = lazy(() => import('./pages/DataCenterPage'));
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -67,12 +69,15 @@ const AppContent: React.FC = () => {
         </StandaloneRouteBoundary>
       );
     }
-    const redirect = encodeURIComponent(location.pathname + location.search);
+    const redirect = encodeURIComponent(location.pathname + location.search + location.hash);
     return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
 
   if (location.pathname === '/login') {
-    return <Navigate to="/" replace />;
+    // Auth refresh may render this boundary before LoginPage's submit resolves.
+    // Both paths must choose the same validated destination.
+    const redirect = resolveLoginRedirect(new URLSearchParams(location.search).get('redirect'));
+    return <Navigate to={redirect} replace />;
   }
 
   return (
@@ -88,6 +93,7 @@ const routeChildren = [
   { path: '/portfolio', element: <PortfolioPage /> },
   { path: '/decision-signals', element: <DecisionSignalsPage /> },
   { path: '/screening', element: <StockScreeningPage /> },
+  { path: '/data', element: <DataCenterPage /> },
   { path: '/backtest', element: <BacktestPage /> },
   { path: '/alerts', element: <AlertsPage /> },
   { path: '/usage', element: <TokenUsagePage /> },

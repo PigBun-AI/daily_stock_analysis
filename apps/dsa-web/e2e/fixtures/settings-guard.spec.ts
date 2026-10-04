@@ -39,7 +39,7 @@ async function fixture(page: Page, requireLogin = false) {
   });
 }
 
-test('back/forward, cancel/discard, reload and reset preserve drafts', async ({ page }, testInfo) => {
+test('back/forward and cancel/discard preserve drafts and exact destinations', async ({ page }, testInfo) => {
   await fixture(page);
   await page.goto('/alerts?filter=active#rules');
   await page.getByRole('link', { name: '设置', exact: true }).click();
@@ -61,13 +61,22 @@ test('back/forward, cancel/discard, reload and reset preserve drafts', async ({ 
   await expect(page).toHaveURL(/\/alerts\?filter=active#rules$/);
   await page.goForward();
   await expect(input).toHaveValue('saved');
+});
+
+test('native reload cancellation preserves drafts and Reset releases the guard', async ({ page }) => {
+  await fixture(page);
+  await page.goto('/settings');
+  const input = page.getByRole('textbox', { name: 'Fixture value' });
+  await input.click(); // Ensure sticky user activation for the native unload prompt.
   await input.fill('reload-draft');
   const nativeDialog = page.waitForEvent('dialog');
-  const reload = page.reload().catch(() => null);
+  // A cancelled reload never reaches page.reload()'s load lifecycle. Trigger
+  // the real browser reload without waiting for a navigation that is rejected.
+  const triggerReload = page.evaluate(() => window.location.reload());
   const unload = await nativeDialog;
   expect(unload.type()).toBe('beforeunload');
   await unload.dismiss();
-  await reload;
+  await triggerReload;
   await expect(input).toHaveValue('reload-draft');
   await page.getByRole('button', { name: '重置', exact: true }).click();
   await expect(input).toHaveValue('saved');
@@ -107,10 +116,10 @@ test('invalid LLM drafts and scheduler overrides survive category changes and re
 
 test('protected deep links survive the data-router login boundary', async ({ page }) => {
   await fixture(page, true);
-  await page.goto('/settings?category=system');
-  await expect(page).toHaveURL(/\/login\?redirect=%2Fsettings%3Fcategory%3Dsystem$/);
+  await page.goto('/settings?category=system#desktop-version-info');
+  await expect(page).toHaveURL(/\/login\?redirect=%2Fsettings%3Fcategory%3Dsystem%23desktop-version-info$/);
   await page.locator('#password').fill('fixture-only-password');
   await page.getByRole('button', { name: '授权进入工作台', exact: true }).click();
-  await expect(page).toHaveURL(/\/settings\?category=system$/);
+  await expect(page).toHaveURL(/\/settings\?category=system#desktop-version-info$/);
   await expect(page.getByTestId('scheduler-enabled-checkbox')).toBeVisible();
 });
