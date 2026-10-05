@@ -15,7 +15,7 @@ import pandas as pd
 from src.config import Config
 from src.services.screening import pipeline as screening_pipeline
 from src.services.screening.config import Config as ScreeningRuntimeConfig
-from src.services.screening.models import HardFilterConfig, Pick, ScreeningConfig, Strategy
+from src.services.screening.models import HardFilterConfig, Pick, ScreenResult, ScreeningConfig, Strategy
 from src.services.screening.post_analysis import run_post_analyzers
 from src.services.screening.ranker import rank_candidates_with_metadata
 from src.services.screening.strategy import list_strategies
@@ -359,8 +359,15 @@ class ScreeningHistoryTestCase(unittest.TestCase):
     def test_empty_pipeline_runs_preserve_actual_strategy_weights_in_history(self) -> None:
         """Exercise both real filter exits through the service and persisted history."""
         service = ScreeningService(self.config, db_manager=self.db)
-        for daily_filter in (False, True):
-            with self.subTest(daily_filter=daily_filter):
+        weight_cases = (
+            ({"value": 6, "liquidity": 4}, {"value": 0.6, "liquidity": 0.4}),
+            ({}, {"value": 0.4, "liquidity": 0.2, "stability": 0.2,
+                  "momentum": 0.11, "activity": 0.09}),
+            ({"value": 0, "liquidity": 0},
+             {"value": 0.4, "liquidity": 0.2, "momentum": 0.2, "activity": 0.2}),
+        )
+        for daily_filter, (configured_weights, expected_weights) in product((False, True), weight_cases):
+            with self.subTest(daily_filter=daily_filter, weights=configured_weights):
                 strategy = Strategy(
                     name="empty_demo", display_name="Empty demo", description="test",
                     version="2.1", category="value",
@@ -370,7 +377,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                             price_min=None if daily_filter else 20,
                             change_60d_min=0 if daily_filter else None,
                         ),
-                        factor_weights={"value": 6, "liquidity": 4},
+                        factor_weights=configured_weights, tech_weight=0.2,
                     ),
                 )
                 snapshot = pd.DataFrame([{
@@ -383,12 +390,22 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                 )
 
                 def run_pipeline(*args, **kwargs):
-                    return screening_pipeline.screen("empty_demo", use_llm=False, config=runtime)
+                    result = screening_pipeline.screen("empty_demo", use_llm=False, config=runtime)
+                    self.assertEqual(result.effective_factor_weights.keys(), expected_weights.keys())
+                    for factor, weight in expected_weights.items():
+                        self.assertAlmostEqual(result.effective_factor_weights[factor], weight)
+                    return result
 
+                # The execution result must remain authoritative even if the
+                # strategy catalog differs from the configuration used to run.
                 with (
                     patch("src.services.screening_service._get_screening_status_snapshot",
                           return_value=({}, True, None)),
                     patch("src.services.screening_service._call_screening_screen", side_effect=run_pipeline),
+                    patch("src.services.screening_service.load_screening_strategies", return_value=[{
+                        "name": "empty_demo", "version": "9.0", "category": "growth",
+                        "factor_weights": {"value": 1},
+                    }]) as catalog_loader,
                     patch.object(screening_pipeline, "load_all_strategies", return_value={"empty_demo": strategy}),
                     patch.object(screening_pipeline, "fetch_snapshot_with_fallback", return_value=snapshot),
                     patch.object(screening_pipeline, "enrich_daily_features",
@@ -397,15 +414,40 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                           side_effect=lambda candidates: (candidates, {})),
                 ):
                     response = service.screen(strategy="empty_demo", market="cn", max_results=3)
+                    # History remains readable without access to the catalog.
+                    catalog_loader.side_effect = AssertionError("History must not reload strategy metadata")
+                    stored = service.history_detail(response["run_id"])["result"]
 
                 self.assertEqual(response["candidates"], [])
                 expected_exit = "No candidates after daily hard filter" if daily_filter else "No candidates after hard filter"
                 self.assertIn(expected_exit, response["degradation"])
-                stored = service.history_detail(response["run_id"])["result"]
                 for result in (response, stored):
                     self.assertEqual(result["strategy_version"], "2.1")
                     self.assertEqual(result["strategy_category"], "value")
-                    self.assertEqual(result["effective_factor_weights"], {"value": 0.6, "liquidity": 0.4})
+                    self.assertEqual(result["effective_factor_weights"].keys(), expected_weights.keys())
+                    for factor, weight in expected_weights.items():
+                        self.assertAlmostEqual(result["effective_factor_weights"][factor], weight)
+                self.assertEqual(stored["effective_factor_weights"], response["effective_factor_weights"])
+
+    def test_missing_runtime_weights_are_not_inferred_from_strategy_catalog(self) -> None:
+        service = ScreeningService(self.config, db_manager=self.db)
+        raw_result = ScreenResult(strategy="empty_demo", market="cn", strategy_version="2.1")
+        with (
+            patch("src.services.screening_service._get_screening_status_snapshot",
+                  return_value=({}, True, None)),
+            patch("src.services.screening_service._call_screening_screen", return_value=raw_result),
+            patch("src.services.screening_service.load_screening_strategies", return_value=[{
+                "name": "empty_demo", "version": "9.0", "factor_weights": {"value": 6, "liquidity": 4},
+            }]),
+            patch("src.services.screening_service._enrich_candidates_with_dsa",
+                  side_effect=lambda candidates: (candidates, {})),
+        ):
+            response = service.screen(strategy="empty_demo", market="cn", max_results=3)
+        stored = service.history_detail(response["run_id"])["result"]
+        for result in (response, stored):
+            self.assertEqual(result["candidates"], [])
+            self.assertEqual(result["strategy_version"], "2.1")
+            self.assertEqual(result["effective_factor_weights"], {})
 
     def test_completed_screen_run_is_persisted_and_loaded(self) -> None:
         raw_result = {
