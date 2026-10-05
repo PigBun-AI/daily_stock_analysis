@@ -302,7 +302,16 @@ def test_dsa_stale_history_remains_available_when_all_native_sources_fail(monkey
     result = fetcher("000001", source="auto", retries=0)
     assert result.attrs["daily_source"] == "dsa:db"
     assert result.attrs["daily_stale"]
-    assert all(f"{source} after 1 attempts: offline" in result.attrs["source_errors"][0] for source in ("tencent", "sina", "akshare", "baostock"))
+    assert result.attrs["source_errors"] == [
+        f"{source} after 1 attempts: offline" for source in ("tencent", "sina", "akshare", "baostock")
+    ]
+    features = daily.compute_daily_features(result)
+    assert features["daily_quality_score"] == 55
+    ranked, _ = apply_risk_overlay([Pick(
+        rank=1, code="000001", name="Test", screen_score=80, final_score=80,
+        daily_quality_flags=features["daily_quality_flags"], daily_quality_score=features["daily_quality_score"],
+    )])
+    assert "low_daily_quality" in ranked[0].risk_flags
 
 
 @pytest.mark.parametrize("first_fails", [False, True])

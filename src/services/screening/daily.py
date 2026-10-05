@@ -311,9 +311,18 @@ def fetch_daily_history(
         stale_history.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
         return stale_history
 
-    raise RuntimeError(
+    error = RuntimeError(
         f"daily history fetch failed for {normalized_code}: {'; '.join(errors)}"
     )
+    # Keep the existing exception type/message, but carry the same structured
+    # diagnostics as a degraded frame so the DSA bridge scores each failure.
+    error.daily_metadata = {
+        "source_errors": list(errors),
+        "daily_source_order": list(sources),
+        "daily_source_order_notes": list(source_order_notes),
+        "daily_source_health": _daily_source_health_snapshot(sources),
+    }
+    raise error
 
 
 def _normalize_daily_code(value: object) -> str:

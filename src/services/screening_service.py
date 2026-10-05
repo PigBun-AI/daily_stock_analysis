@@ -1884,7 +1884,10 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
         except RuntimeError as exc:
             if stale_dsa_history is None:
                 raise
-            stale_dsa_history.attrs["source_errors"] = [str(exc)]
+            metadata = getattr(exc, "daily_metadata", {})
+            stale_dsa_history.attrs.update(metadata)
+            if "source_errors" not in metadata:
+                stale_dsa_history.attrs["source_errors"] = [str(exc)]
             logger.warning("Screening uses stale DSA daily history for %s: %s", code, exc)
             return stale_dsa_history
 
