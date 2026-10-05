@@ -154,8 +154,8 @@ def test_lagging_native_source_is_not_promoted_by_new_cache_timestamp(monkeypatc
     assert fetch.call_count == 2
 
 
-def _auto_sources(monkeypatch, outcomes):
-    monkeypatch.setattr(daily, "_has_tushare_token", lambda: False)
+def _auto_sources(monkeypatch, outcomes, *, has_tushare_token=False):
+    monkeypatch.setattr(daily, "_has_tushare_token", lambda: has_tushare_token)
     monkeypatch.setattr(daily, "_SOURCE_HEALTH", {})
     fetchers = {}
     for source, outcome in outcomes.items():
@@ -166,13 +166,19 @@ def _auto_sources(monkeypatch, outcomes):
 
 
 @pytest.mark.parametrize("via_dsa", [False, True])
-def test_auto_skips_stale_source_and_caches_fresh_fallback(monkeypatch, tmp_path, via_dsa):
+@pytest.mark.parametrize("has_tushare_token", [False, True])
+def test_auto_skips_stale_source_and_caches_fresh_fallback(
+    monkeypatch, tmp_path, via_dsa, has_tushare_token,
+):
     _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
     path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T14:00:00+08:00", source="auto")
-    fetchers = _auto_sources(monkeypatch, {
+    outcomes = {
         "tencent": _history("2025-06-05"), "sina": _history("2025-06-06"),
         "akshare": RuntimeError("should not be called"), "baostock": RuntimeError("should not be called"),
-    })
+    }
+    if has_tushare_token:
+        outcomes["tushare"] = _history("2025-06-05")
+    fetchers = _auto_sources(monkeypatch, outcomes, has_tushare_token=has_tushare_token)
     fetcher = daily.fetch_daily_history
     if via_dsa:
         monkeypatch.setattr(
@@ -180,6 +186,10 @@ def test_auto_skips_stale_source_and_caches_fresh_fallback(monkeypatch, tmp_path
         )
         fetcher = screening_service._build_screening_dsa_daily_history_fetcher()
     result = fetcher("000001", source="auto", retries=2, cache_dir=tmp_path)
+    if has_tushare_token:
+        fetchers["tushare"].assert_called_once()
+        assert result.attrs["daily_source_order"][0] == "tushare"
+        assert "tushare: stale daily history" in result.attrs["daily_source_order_notes"]
     fetchers["tencent"].assert_called_once()
     fetchers["sina"].assert_called_once()
     fetchers["akshare"].assert_not_called()
@@ -190,6 +200,46 @@ def test_auto_skips_stale_source_and_caches_fresh_fallback(monkeypatch, tmp_path
     assert "tencent: stale daily history" in result.attrs["daily_source_order_notes"]
     assert "stale_cache" not in daily.compute_daily_features(result)["daily_quality_flags"]
     assert daily._read_daily_history_cache(path, ttl_seconds=86400).attrs["daily_source"] == "sina"
+
+
+@pytest.mark.parametrize("via_dsa", [False, True])
+def test_fresh_auto_fallback_reaches_features_without_stale_risk_penalty(monkeypatch, via_dsa):
+    _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
+    fresh = _history("2025-06-06")
+    fresh.loc[64, "close"] = 10.5
+    fetchers = _auto_sources(monkeypatch, {
+        "tencent": _history("2025-06-05"), "sina": fresh,
+        "akshare": RuntimeError("should not be called"), "baostock": RuntimeError("should not be called"),
+    })
+    history_fetcher = None
+    if via_dsa:
+        monkeypatch.setattr(
+            screening_service, "get_dsa_daily_history", lambda code, **kwargs: (_history("2025-06-05"), "db"),
+        )
+        history_fetcher = screening_service._build_screening_dsa_daily_history_fetcher()
+    enriched = daily.enrich_daily_features(
+        pd.DataFrame([{"code": "000001"}]), source="auto", fetch_retries=0,
+        history_fetcher=history_fetcher,
+    )
+    fetchers["tencent"].assert_called_once()
+    fetchers["sina"].assert_called_once()
+    fetchers["akshare"].assert_not_called()
+    fetchers["baostock"].assert_not_called()
+    assert enriched.attrs["daily_success_count"] == 1
+    assert enriched.attrs["daily_source_counts"] == {"sina": 1}
+    row = enriched.iloc[0]
+    assert row["ma5"] == pytest.approx(10.1)
+    assert "stale_cache" not in row["daily_quality_flags"]
+    assert "fallback_errors" not in row["daily_quality_flags"]
+    pick = Pick(
+        rank=1, code="000001", name="Test", screen_score=80, final_score=80,
+        daily_quality_flags=row["daily_quality_flags"], daily_quality_score=row["daily_quality_score"],
+    )
+    ranked, _ = apply_risk_overlay([pick])
+    assert "daily_stale_cache" not in ranked[0].risk_flags
+    assert "daily_source_fallback_errors" not in ranked[0].risk_flags
+    assert ranked[0].risk_penalty == 0
+    assert ranked[0].final_score == 80
 
 
 @pytest.mark.parametrize("with_cache", [False, True])
