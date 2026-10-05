@@ -1867,7 +1867,7 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                 exc,
             )
         try:
-            return original_fetch(
+            native_history = original_fetch(
                 code,
                 lookback_days=lookback_days,
                 source=source,
@@ -1875,6 +1875,12 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                 cache_dir=cache_dir,
                 cache_ttl_seconds=cache_ttl_seconds,
             )
+            if stale_dsa_history is not None and daily_module.daily_history_is_stale(native_history, code=code):
+                for key in ("source_errors", "daily_source_order", "daily_source_order_notes", "daily_source_health"):
+                    if key in native_history.attrs:
+                        stale_dsa_history.attrs[key] = native_history.attrs[key]
+                return stale_dsa_history
+            return native_history
         except RuntimeError as exc:
             if stale_dsa_history is None:
                 raise

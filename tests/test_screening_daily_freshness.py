@@ -305,6 +305,30 @@ def test_dsa_stale_history_remains_available_when_all_native_sources_fail(monkey
     assert all(f"{source} after 1 attempts: offline" in result.attrs["source_errors"][0] for source in ("tencent", "sina", "akshare", "baostock"))
 
 
+@pytest.mark.parametrize("first_fails", [False, True])
+def test_dsa_stale_history_keeps_priority_when_native_sources_are_also_stale(monkeypatch, tmp_path, first_fails):
+    _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
+    path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T14:00:00+08:00", source="auto")
+    before = path.read_bytes()
+    outcomes = {source: _history("2025-06-04") for source in ("tencent", "sina", "akshare", "baostock")}
+    if first_fails:
+        outcomes["tencent"] = RuntimeError("offline")
+    fetchers = _auto_sources(monkeypatch, outcomes)
+    monkeypatch.setattr(
+        screening_service, "get_dsa_daily_history", lambda code, **kwargs: (_history("2025-06-05"), "db"),
+    )
+    fetcher = screening_service._build_screening_dsa_daily_history_fetcher()
+    result = fetcher("000001", source="auto", retries=0, cache_dir=tmp_path)
+    assert result.attrs["daily_source"] == "dsa:db"
+    assert result["date"].max() == "2025-06-05"
+    assert result.attrs["daily_stale"]
+    assert path.read_bytes() == before
+    for source in fetchers.values():
+        source.assert_called_once()
+    assert result.attrs["source_errors"] == (["tencent after 1 attempts: offline"] if first_fails else [])
+    assert "stale_cache" in daily.compute_daily_features(result)["daily_quality_flags"]
+
+
 def test_calendar_unavailable_retains_ttl_and_preserves_explicit_stale_metadata(monkeypatch, tmp_path):
     _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
     monkeypatch.setattr(trading_calendar, "_XCALS_AVAILABLE", False)
