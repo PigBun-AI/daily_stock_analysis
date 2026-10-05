@@ -1804,6 +1804,7 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
     """
     try:
         daily_module = importlib.import_module("src.services.screening.daily")
+        from pandas import isna
     except Exception:
         return None
 
@@ -1879,8 +1880,9 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                 stale_dsa_history is not None
                 and daily_module.daily_history_is_stale(native_history, code=code)
                 and not (
-                    daily_module._latest_daily_bar_date(native_history)
-                    > daily_module._latest_daily_bar_date(stale_dsa_history)
+                    isna(daily_module._latest_daily_bar_date(stale_dsa_history, code=code))
+                    or daily_module._latest_daily_bar_date(native_history, code=code)
+                    > daily_module._latest_daily_bar_date(stale_dsa_history, code=code)
                 )
             ):
                 for key in ("source_errors", "daily_source_order", "daily_source_order_notes", "daily_source_health"):

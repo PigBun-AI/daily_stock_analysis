@@ -279,8 +279,8 @@ def fetch_daily_history(
                     result.attrs["daily_stale"] = True
                     if (
                         stale_history is None
-                        or pd.isna(_latest_daily_bar_date(stale_history))
-                        or _latest_daily_bar_date(result) > _latest_daily_bar_date(stale_history)
+                        or pd.isna(_latest_daily_bar_date(stale_history, code=normalized_code))
+                        or _latest_daily_bar_date(result, code=normalized_code) > _latest_daily_bar_date(stale_history, code=normalized_code)
                     ):
                         stale_history = result
                     source_order_notes.append(f"{current}: stale daily history")
@@ -309,8 +309,8 @@ def fetch_daily_history(
         )
         if stale_cached is not None and (
             stale_history is None
-            or pd.isna(_latest_daily_bar_date(stale_history))
-            or _latest_daily_bar_date(stale_cached) > _latest_daily_bar_date(stale_history)
+            or pd.isna(_latest_daily_bar_date(stale_history, code=normalized_code))
+            or _latest_daily_bar_date(stale_cached, code=normalized_code) > _latest_daily_bar_date(stale_history, code=normalized_code)
         ):
             stale_history = stale_cached
     if stale_history is not None:
@@ -478,7 +478,7 @@ def _daily_history_cache_path(
     return Path(cache_dir) / f"{safe_code}_{safe_source}_{int(lookback_days)}_{digest}.json"
 
 
-def _latest_daily_bar_date(hist: pd.DataFrame) -> pd.Timestamp:
+def _latest_daily_bar_date(hist: pd.DataFrame, *, code: str | None = None) -> pd.Timestamp:
     """Return the latest dated, non-null close for degraded candidate comparison."""
     date_column = next((column for column in ("date", "日期", "trade_date") if column in hist.columns), None)
     if date_column is None:
@@ -487,7 +487,19 @@ def _latest_daily_bar_date(hist: pd.DataFrame) -> pd.Timestamp:
     close_column = next((column for column in ("close", "收盘") if column in hist.columns), None)
     if close_column is not None:
         dates = dates.where(pd.to_numeric(hist[close_column], errors="coerce").notna())
-    return dates.max()
+    latest = dates.max()
+    if code is not None and not pd.isna(latest):
+        market = get_market_for_stock(code)
+        current = build_market_phase_context(market=market)
+        if current.phase != MarketPhase.UNKNOWN:
+            if latest.date() > current.session_date:
+                return pd.NaT
+            bar_phase = build_market_phase_context(
+                market=market, current_time=latest.to_pydatetime().replace(hour=12, tzinfo=timezone.utc),
+            )
+            if bar_phase.phase == MarketPhase.NON_TRADING:
+                return pd.NaT
+    return latest
 
 
 def daily_history_is_stale(

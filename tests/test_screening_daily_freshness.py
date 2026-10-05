@@ -379,6 +379,36 @@ def test_preopen_placeholder_cache_is_not_reused_intraday(monkeypatch, tmp_path,
         fetchers["akshare"].assert_not_called()
 
 
+@pytest.mark.parametrize("now,invalid_date,valid_date", [
+    ("2025-06-08T10:00:00+08:00", "2025-06-07", "2025-06-05"),
+    ("2025-10-01T16:00:00+08:00", "2025-10-01", "2025-09-29"),
+    ("2025-06-06T16:00:00+08:00", "2025-06-09", "2025-06-05"),
+])
+@pytest.mark.parametrize("with_cache", [False, True])
+def test_invalid_session_fallback_ranks_behind_valid_stale_data(
+    monkeypatch, tmp_path, now, invalid_date, valid_date, with_cache,
+):
+    _freeze_time(monkeypatch, now)
+    malformed = _history(valid_date)
+    malformed.loc[malformed.index[-1], "date"] = invalid_date
+    if with_cache:
+        path = _cache(tmp_path, _history(valid_date), now, source="auto")
+        before = path.read_bytes()
+    fetchers = _auto_sources(monkeypatch, {
+        "tencent": malformed, "sina": malformed if with_cache else _history(valid_date),
+        "akshare": malformed, "baostock": RuntimeError("offline"),
+    })
+    result = daily.fetch_daily_history("000001", source="auto", retries=0, cache_dir=tmp_path if with_cache else None)
+    assert result.attrs["daily_source"] == ("auto" if with_cache else "sina")
+    assert result["date"].max() == valid_date
+    assert result.attrs["daily_stale"]
+    assert result.attrs["source_errors"] == ["baostock after 1 attempts: offline"]
+    if with_cache:
+        assert path.read_bytes() == before
+    for fetcher in fetchers.values():
+        fetcher.assert_called_once()
+
+
 def test_auto_keeps_stale_history_when_remaining_sources_fail(monkeypatch):
     _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
     fetchers = _auto_sources(monkeypatch, {
