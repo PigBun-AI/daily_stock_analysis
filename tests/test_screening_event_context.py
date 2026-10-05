@@ -1,14 +1,16 @@
 """Event evidence through real ranking, risk, response, and history paths."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
+import re
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
 
 from src.config import Config
-from src.search_service import SearchResponse, SearchResult
+from src.search_service import SearchResponse, SearchResult, SearchService
 from src.services import screening_service
 from src.services.screening import pipeline, ranker
 from src.services.screening.config import Config as PipelineConfig
@@ -141,6 +143,53 @@ def test_event_evidence_reaches_llm_then_existing_risk_overlay_and_history(scree
     persisted = stored["result"]
     assert persisted["candidates"][0]["dsa_events"] == selected["dsa_events"]
     assert persisted["candidates"][0]["dsa_news"] == selected["dsa_news"]
+
+
+def test_real_search_retrieval_time_survives_cache_prompt_response_and_history(screening_run, monkeypatch):
+    search = SearchService(bocha_keys=["test-key"], searxng_public_instances_enabled=False)
+    monkeypatch.setattr(screening_service, "_get_dsa_search_service", lambda: search)
+    acquired = datetime.now(timezone.utc)
+
+    class SearchClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz) if tz else now.replace(tzinfo=None)
+
+    def http_response(*args, **kwargs):
+        code = re.search(r"\d{6}", kwargs["json"]["query"])[0]
+        response = Mock(status_code=200)
+        response.json.return_value = {"code": 200, "data": {"webPages": {"value": [{
+            "name": f"{code} 公司公告", "summary": f"{code} 公司业绩快报",
+            "url": f"https://example.test/{code}", "siteName": "test-provider",
+            "datePublished": acquired.date().isoformat(),
+        }]}}}
+        return response
+
+    with patch("src.search_service._post_with_retry", side_effect=http_response) as request:
+        for elapsed, expected_requests in ((0, 4), (30, 4), (search._cache_ttl + 1, 8)):
+            now = acquired + timedelta(seconds=elapsed)
+            expected = acquired if elapsed <= search._cache_ttl else now
+            with patch("src.search_service.datetime", SearchClock), patch(
+                "src.search_service.time.time", return_value=now.timestamp(),
+            ):
+                response = screening_run.run()
+
+            # Only HTTP is mocked: provider parsing, timestamp acquisition,
+            # SearchService filtering/ranking/cache and screening all run.
+            assert request.call_count == expected_requests
+            candidates = _prompt_candidates(screening_run.state["prompts"][-1])
+            for candidate in candidates:
+                for kind in ("news", "event"):
+                    item = _prompt_evidence(candidate, kind)["items"][0]
+                    assert item["retrieved_at"] == expected.isoformat()
+                    assert item["published_date"] == acquired.date().isoformat()
+
+            selected = response["candidates"][0]
+            stored = screening_run.database.get_screening_run(response["run_id"])
+            assert stored is not None
+            for field in ("dsa_news", "dsa_events"):
+                assert selected[field][0]["retrieved_at"] == expected.isoformat()
+                assert stored["result"]["candidates"][0][field] == selected[field]
 
 
 @pytest.mark.parametrize("mode", ["fresh", "empty", "undated", "failed"])
