@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from src.config import Config
+from src.search_service import SearchResponse, SearchResult
 from src.services import screening_service
 from src.services.screening import pipeline, ranker
 from src.services.screening.config import Config as PipelineConfig
@@ -73,9 +74,9 @@ def screening_run(monkeypatch):
 
     def provider_response(kind, *args, **kwargs):
         payload = evidence(kind, *args, **kwargs)
-        return SimpleNamespace(
+        return SearchResponse(
             query="test", provider="test-engine", success=payload["success"],
-            results=[SimpleNamespace(**item) for item in payload["results"]],
+            results=[SearchResult(**item) for item in payload["results"]],
         )
 
     search_provider = SimpleNamespace(
@@ -285,10 +286,10 @@ def test_insufficient_budget_omits_source_data_instead_of_clipping_json():
 
 
 def test_search_adapter_preserves_upstream_fetch_time_and_leaves_missing_time_unknown():
-    response = SimpleNamespace(success=True, results=[
-        SimpleNamespace(title="Cached", retrieved_at="2026-01-02T03:04:05+00:00"),
-        SimpleNamespace(title="No timestamp"),
-        SimpleNamespace(title="Outside result limit", retrieved_at="2026-01-03T03:04:05+00:00"),
+    response = SearchResponse(query="test", provider="test", success=True, results=[
+        SearchResult("Cached", "", "", "test", retrieved_at="2026-01-02T03:04:05+00:00"),
+        SearchResult("No timestamp", "", "", "test"),
+        SearchResult("Outside result limit", "", "", "test", retrieved_at="2026-01-03T03:04:05+00:00"),
     ])
     payload = screening_service._normalize_dsa_search_response(response, max_results=2)
     assert len(payload["results"]) == 2
