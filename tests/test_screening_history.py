@@ -361,6 +361,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
         service = ScreeningService(self.config, db_manager=self.db)
         weight_cases = (
             ({"value": 6, "liquidity": 4}, {"value": 0.6, "liquidity": 0.4}),
+            ({"value": 1, "momentum": 0}, {"value": 1.0, "momentum": 0.0}),
             ({}, {"value": 0.4, "liquidity": 0.2, "stability": 0.2,
                   "momentum": 0.11, "activity": 0.09}),
             ({"value": 0, "liquidity": 0},

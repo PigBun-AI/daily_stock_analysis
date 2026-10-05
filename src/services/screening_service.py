@@ -1285,7 +1285,7 @@ class ScreeningService:
             "strategy": raw_data.get("strategy") or strategy,
             "strategy_version": raw_data.get("strategy_version") or "",
             "strategy_category": raw_data.get("strategy_category") or "",
-            "effective_factor_weights": _valid_positive_factor_weights(raw_data.get("effective_factor_weights")),
+            "effective_factor_weights": _valid_nonnegative_factor_weights(raw_data.get("effective_factor_weights")),
             "market": raw_data.get("market") or market,
             "snapshot_count": raw_data.get("snapshot_count"),
             "snapshot_source": raw_data.get("snapshot_source") or "",
@@ -3910,6 +3910,10 @@ def _strategy_factor_weights(
 
 
 def _valid_positive_factor_weights(value: Any) -> Dict[str, float]:
+    return {factor: weight for factor, weight in _valid_nonnegative_factor_weights(value).items() if weight > 0}
+
+
+def _valid_nonnegative_factor_weights(value: Any) -> Dict[str, float]:
     if not isinstance(value, dict):
         return {}
     return {
@@ -3917,7 +3921,7 @@ def _valid_positive_factor_weights(value: Any) -> Dict[str, float]:
         for factor, weight in value.items()
         if isinstance(weight, (int, float))
         and math.isfinite(float(weight))
-        and float(weight) > 0
+        and float(weight) >= 0
     }
 
 

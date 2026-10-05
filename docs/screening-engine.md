@@ -205,3 +205,5 @@ AlphaSift 是参考来源，不是自动同步源。更新时应：
 - 业务回滚：设置 `SCREENING_ENABLED=false` 并重启；普通个股分析、报告、通知和问股不受影响。
 - 代码回滚：revert 引入选股引擎的提交并重建后端、Docker 与桌面产物。
 - 数据回滚：如需保留选股缓存和运行历史，先备份 `data/screening/` 与 DSA 数据库；代码回滚不会主动删除 `screening_runs` 用户数据。
+
+实际运行元数据 `effective_factor_weights` 保留有限、非负权重，包括明确为 0 的禁用因子；候选解释只消费正权重，避免将禁用因子作为入选理由。
