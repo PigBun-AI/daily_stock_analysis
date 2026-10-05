@@ -10,9 +10,12 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import pandas as pd
+
 from src.config import Config
+from src.services.screening import pipeline as screening_pipeline
 from src.services.screening.config import Config as ScreeningRuntimeConfig
-from src.services.screening.models import Pick
+from src.services.screening.models import HardFilterConfig, Pick, ScreeningConfig, Strategy
 from src.services.screening.post_analysis import run_post_analyzers
 from src.services.screening.ranker import rank_candidates_with_metadata
 from src.services.screening.strategy import list_strategies
@@ -352,6 +355,57 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                 self.assertIn({"code": "llm_ranking", "text": "模型已参与排序（未提供入选理由）",
                                "source": "llm", "quality": "inferred"}, candidate["why_selected"])
                 self.assertEqual(service.history_detail(run_id)["result"]["candidates"], [candidate])
+
+    def test_empty_pipeline_runs_preserve_actual_strategy_weights_in_history(self) -> None:
+        """Exercise both real filter exits through the service and persisted history."""
+        service = ScreeningService(self.config, db_manager=self.db)
+        for daily_filter in (False, True):
+            with self.subTest(daily_filter=daily_filter):
+                strategy = Strategy(
+                    name="empty_demo", display_name="Empty demo", description="test",
+                    version="2.1", category="value",
+                    screening=ScreeningConfig(
+                        enabled=True,
+                        hard_filters=HardFilterConfig(
+                            price_min=None if daily_filter else 20,
+                            change_60d_min=0 if daily_filter else None,
+                        ),
+                        factor_weights={"value": 6, "liquidity": 4},
+                    ),
+                )
+                snapshot = pd.DataFrame([{
+                    "code": "000001", "name": "Test", "price": 10,
+                    "change_pct": 0, "amount": 200_000_000,
+                }])
+                runtime = ScreeningRuntimeConfig(
+                    daily_enrich_enabled=False, post_analyzers=[],
+                    risk_enabled=False, portfolio_diversity_enabled=False,
+                )
+
+                def run_pipeline(*args, **kwargs):
+                    return screening_pipeline.screen("empty_demo", use_llm=False, config=runtime)
+
+                with (
+                    patch("src.services.screening_service._get_screening_status_snapshot",
+                          return_value=({}, True, None)),
+                    patch("src.services.screening_service._call_screening_screen", side_effect=run_pipeline),
+                    patch.object(screening_pipeline, "load_all_strategies", return_value={"empty_demo": strategy}),
+                    patch.object(screening_pipeline, "fetch_snapshot_with_fallback", return_value=snapshot),
+                    patch.object(screening_pipeline, "enrich_daily_features",
+                                 side_effect=lambda df, **kwargs: df.assign(change_60d=-10)),
+                    patch("src.services.screening_service._enrich_candidates_with_dsa",
+                          side_effect=lambda candidates: (candidates, {})),
+                ):
+                    response = service.screen(strategy="empty_demo", market="cn", max_results=3)
+
+                self.assertEqual(response["candidates"], [])
+                expected_exit = "No candidates after daily hard filter" if daily_filter else "No candidates after hard filter"
+                self.assertIn(expected_exit, response["degradation"])
+                stored = service.history_detail(response["run_id"])["result"]
+                for result in (response, stored):
+                    self.assertEqual(result["strategy_version"], "2.1")
+                    self.assertEqual(result["strategy_category"], "value")
+                    self.assertEqual(result["effective_factor_weights"], {"value": 0.6, "liquidity": 0.4})
 
     def test_completed_screen_run_is_persisted_and_loaded(self) -> None:
         raw_result = {

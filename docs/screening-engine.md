@@ -60,6 +60,8 @@ SCREENING_EASTMONEY_JITTER_SEC=0.3
 
 ## 单股条件检查（提供快照）
 
+快照或日线硬过滤后没有候选的运行也保留当次策略的归一化因子权重，与非空结果一致；这些元数据记录选股配置，不表示被淘汰的候选已经完成评分。
+
 `POST /api/v1/screening/screen/check` 供脚本/API 客户端解释任意一条快照为什么通过或未通过策略硬过滤。需要开启 `SCREENING_ENABLED`；与已有选股接口共用管理员认证中间件，启用认证时无有效会话返回 `401`。策略 ID 从当前启用的策略目录查找，并校验 `market`（`cn`/`us`）是否在该策略的 `market_scope` 内。
 
 ```json
