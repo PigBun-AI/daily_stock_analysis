@@ -5,6 +5,7 @@ Strategy synthesis helpers for skill-agent consensus.
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, replace
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -219,6 +220,7 @@ class StrategySynthesizer:
         conflicts: List[StrategyConflict],
         insufficient_evidence: bool = False,
         invalid_count: int = 0,
+        applied_weights: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
         conflict_severity = _highest_severity(conflicts)
         adjusted_confidence = self.adjust_confidence(weighted_confidence, conflict_severity)
@@ -248,6 +250,7 @@ class StrategySynthesizer:
         invalid_count = max(invalid_count, sum(1 for op in opinions if op.invalid_signal))
 
         payload = {
+            "schema_version": "strategy-synthesis-v1",
             "final_signal": final_signal,
             "weighted_score": round(weighted_score, 4),
             "confidence": round(adjusted_confidence, 4),
@@ -269,11 +272,49 @@ class StrategySynthesizer:
                 "conflict_count": len(conflicts),
             },
         }
+        payload.update(self._presentation_fields(opinions, applied_weights, opposing))
         if deliberation is not None:
             payload["deliberation"] = deliberation.to_dict()
         if revision_projection is not None:
             payload["revision_projection"] = revision_projection
         return payload
+
+    @staticmethod
+    def _presentation_fields(
+        opinions: List[StrategyOpinion],
+        applied_weights: Optional[List[float]],
+        opposing: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Project actual aggregation weights without changing the final signal."""
+        if applied_weights is not None and len(applied_weights) != len(opinions):
+            raise ValueError("Applied weights must align with strategy opinions")
+        distribution = {side: {"count": 0, "weight_share": None} for side in ("bullish", "neutral", "bearish")}
+        sums = dict.fromkeys(distribution, 0.0)
+        weights = {}
+        for index, opinion in enumerate(opinions):
+            if opinion.invalid_signal:
+                continue
+            score = strategy_signal_score(opinion.signal)
+            side = "bullish" if score > 3 else "bearish" if score < 3 else "neutral"
+            distribution[side]["count"] += 1
+            weight = applied_weights[index] if applied_weights is not None else 0.0
+            if not math.isfinite(weight) or weight < 0:
+                raise ValueError("Applied weights must be finite and nonnegative")
+            sums[side] += weight
+            weights[(opinion.skill_id, opinion.agent_name)] = weight
+        total = sum(sums.values())
+        if total > 0:
+            for side in distribution:
+                distribution[side]["weight_share"] = sums[side] / total
+        primary = min(
+            opposing,
+            key=lambda item: (
+                -weights.get((item["skill_id"], item["agent_name"]), 0.0),
+                -item["confidence"], item["skill_id"],
+            ),
+            default=None,
+        )
+        return {"signal_distribution": distribution, "primary_dissent": dict(primary) if primary else None}
 
     @staticmethod
     def adjust_confidence(confidence: float, conflict_severity: str) -> float:

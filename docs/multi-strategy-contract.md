@@ -547,3 +547,47 @@ Phase 1 必须提供如下 E2E 反例覆盖。E2E 定义为：从 SkillAgent 输
 | Phase 2/3/4 独立回退 | 各自 Phase 的运行时改动独立回退 | 不能回退 Baseline，任何 Phase 都必须始终满足 Baseline 八条不变量 |
 
 Baseline 不新增配置项，因此无 env-level 回滚开关；这是刻意选择——契约边界应在代码中恒定生效，不通过环境变量降级。
+
+## 类型化报告投影与 Web/Desktop 共识展示
+
+分析响应、内存任务结果、数据库任务恢复和历史详情通过同一投影返回
+`report.details.strategy_synthesis`。该字段可为空，保留原有 `details.raw_result`。
+Web 与 Desktop 共用 `StrategySynthesisCard`，在概览之后、策略点位之前展示。
+
+新增合成字段由 `StrategySynthesizer` 计算，不增加模型调用，不改变权威信号、
+聚合权重或 RiskAgent 的独立风控边界：
+
+- `schema_version`：新结果为 `strategy-synthesis-v1`，旧结果不回填。
+- `signal_distribution`：`bullish` 为 buy/strong_buy，`neutral` 为 hold，
+  `bearish` 为 sell/strong_sell。只统计有效观点；`weight_share` 使用本次聚合实际
+  应用的权重（包含已启用的 outcome 权重因子），有效权重为零或未提供时为 null。
+  这三个绝对方向与相对最终策略信号的支持/反对阵营含义不同。
+- `primary_dissent`：仅从 `opposing_skills` 中选取，按实际权重降序、置信度降序、
+  skill ID 升序确定。没有反对观点时为 null，不调用 LLM，不改变 `final_signal`。
+- 全部观点无效时保留 insufficient 诊断，三类 count 为 0、weight_share 为 null；
+  没有 specialist 观点的单 Agent 报告不生成共识卡片。
+
+API 复用 `normalize_strategy_synthesis_payload()` 后做类型校验。无合法最终策略信号
+的历史载荷视为缺失；非法列表项被过滤，非法可选字段被省略。投影仅保留展示字段，
+不转发原始 prompt、工具返回、冲突 metadata 或协同原始响应。历史记录缺少分布和主要
+反对观点时不从 raw payload 重算，也不迁移或回填数据库。
+
+卡片支持 zh/en/ko：展示策略综合信号、共识度、分歧程度、有效/无效策略数、观点置信度
+及多空分布，主要反对观点直接可见，支持/反对策略、分歧及协同摘要可展开。长理由默认
+截断，展开后显示全文。缺失指标显示“未记录”，不冒充零值。策略分歧不是风控风险等级，
+策略信号不是经过独立风控后的最终报告建议。
+
+`revision_projection` 只以 `mode=preview_only`、`final_signal_overridden=false`
+的低敏投影展示，并明确标为“协同推演预览，不改变策略综合信号”。前端不重新计算
+信号、权重、阵营或主要反对观点。
+
+验证入口：
+
+```bash
+python -m pytest tests/test_strategy_synthesis_display.py -q
+cd apps/dsa-web
+npm run test -- src/components/report/__tests__/StrategySynthesisCard.test.tsx
+npx playwright test --config playwright.fixture.config.ts strategy-synthesis
+```
+
+回滚可整体撤销本次显示契约与组件；无数据库迁移、新配置或依赖变更。

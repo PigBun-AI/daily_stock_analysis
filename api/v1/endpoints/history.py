@@ -35,6 +35,7 @@ from api.v1.schemas.history import (
 )
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.run_flow import RunFlowSnapshot
+from api.v1.schemas.strategy_synthesis import project_strategy_synthesis
 from src.storage import DatabaseManager
 from src.report_language import (
     get_sentiment_label,
@@ -661,6 +662,7 @@ def get_history_detail(
             news_content=result.get("news_content"),
             empty_news_disclosure=result.get("empty_news_disclosure"),
             raw_result=result.get("raw_result"),
+            strategy_synthesis=project_strategy_synthesis(result.get("raw_result")),
             context_snapshot=api_context_snapshot,
             analysis_context_pack_overview=analysis_context_pack_overview,
             financial_report=extracted_fundamental.get("financial_report"),

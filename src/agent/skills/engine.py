@@ -196,6 +196,7 @@ class StrategyEngine:
             conflicts=aggregation.conflicts,
             insufficient_evidence=aggregation.insufficient_evidence,
             invalid_count=partition.invalid_count,
+            applied_weights=aggregation.weights,
         )
         consensus_opinion = self._build_consensus_opinion(aggregation, synthesis)
         return StrategyResult(
@@ -248,6 +249,12 @@ class StrategyEngine:
     @staticmethod
     def _build_no_consensus_stub(invalid_count: int) -> Dict[str, Any]:
         return {
+            "schema_version": "strategy-synthesis-v1",
+            "signal_distribution": {
+                side: {"count": 0, "weight_share": None}
+                for side in ("bullish", "neutral", "bearish")
+            },
+            "primary_dissent": None,
             "final_signal": "hold",
             "weighted_score": 3.0,
             "confidence": 0.0,

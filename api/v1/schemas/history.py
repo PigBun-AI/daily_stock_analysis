@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from api.v1.schemas.market_phase import MarketPhaseSummary
 from api.v1.schemas.research_artifact import ResearchArtifact
+from api.v1.schemas.strategy_synthesis import StrategySynthesis
 from src.schemas.decision_action import DecisionAction
 
 
@@ -271,6 +272,7 @@ class ReportDetails(BaseModel):
         description="新闻检索未执行或零命中时的用户可见披露",
     )
     raw_result: Optional[Any] = Field(None, description="原始分析结果（JSON）")
+    strategy_synthesis: Optional[StrategySynthesis] = Field(None, description="权威多策略共识的低敏展示投影")
     context_snapshot: Optional[Any] = Field(None, description="分析时上下文快照（JSON）")
     analysis_context_pack_overview: Optional[AnalysisContextPackOverview] = Field(
         None,

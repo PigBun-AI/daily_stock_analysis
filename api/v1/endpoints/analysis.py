@@ -56,6 +56,7 @@ from api.v1.schemas.history import (
     ReportDetails,
 )
 from api.v1.schemas.run_flow import RunFlowSnapshot
+from api.v1.schemas.strategy_synthesis import project_strategy_synthesis
 from data_provider.base import canonical_stock_code, normalize_stock_code
 from src.data.stock_index_loader import resolve_index_stock_code
 from src.config import Config
@@ -1318,6 +1319,7 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                 or extracted_boards.get("sector_rankings") is not None
                 or extracted_boards.get("concept_rankings") is not None
             )
+            strategy_synthesis = project_strategy_synthesis(raw_result)
             details = None
             if (
                 any(extracted_fundamental.values())
@@ -1326,11 +1328,13 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                 or context_snapshot is not None
                 or analysis_context_pack_overview is not None
                 or news_disclosure is not None
+                or strategy_synthesis is not None
             ):
                 details = ReportDetails(
                     news_content=getattr(record, "news_content", None),
                     empty_news_disclosure=news_disclosure,
                     raw_result=raw_result,
+                    strategy_synthesis=strategy_synthesis,
                     context_snapshot=api_context_snapshot,
                     analysis_context_pack_overview=analysis_context_pack_overview,
                     financial_report=extracted_fundamental.get("financial_report"),
@@ -1621,6 +1625,7 @@ def _build_analysis_report(
     )
     if news_disclosure is None and isinstance(details_data, dict):
         news_disclosure = details_data.get("empty_news_disclosure")
+    strategy_synthesis = project_strategy_synthesis(raw_result_data)
     details = None
     has_board_details = (
         bool(extracted_boards.get("belong_boards"))
@@ -1635,11 +1640,13 @@ def _build_analysis_report(
         or context_snapshot is not None
         or analysis_context_pack_overview is not None
         or news_disclosure is not None
+        or strategy_synthesis is not None
     ):
         details = ReportDetails(
             news_content=details_data.get("news_summary") or details_data.get("news_content"),
             empty_news_disclosure=news_disclosure,
             raw_result=raw_result_data,
+            strategy_synthesis=strategy_synthesis,
             context_snapshot=api_context_snapshot,
             analysis_context_pack_overview=analysis_context_pack_overview,
             financial_report=extracted_fundamental.get("financial_report"),

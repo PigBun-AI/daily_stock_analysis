@@ -360,11 +360,74 @@ export interface AnalysisContextPackOverview {
   metadata: AnalysisContextPackOverviewMetadata;
 }
 
+export type StrategySignal = 'strong_buy' | 'buy' | 'hold' | 'sell' | 'strong_sell';
+export type StrategyConsensusLevel = 'insufficient' | 'low' | 'medium' | 'high';
+export type StrategyConflictSeverity = 'none' | 'low' | 'medium' | 'high';
+
+export interface StrategyDisplayOpinion {
+  skillId: string;
+  signal: StrategySignal;
+  agentName?: string | null;
+  confidence?: number | null;
+  reasoning?: string | null;
+  conditionsMet: string[];
+}
+
+export interface StrategySynthesis {
+  schemaVersion?: 'strategy-synthesis-v1' | null;
+  finalSignal: StrategySignal;
+  weightedScore?: number | null;
+  confidence?: number | null;
+  originalConfidence?: number | null;
+  consensusLevel?: StrategyConsensusLevel | null;
+  conflictCount?: number | null;
+  conflictSeverity?: StrategyConflictSeverity | null;
+  summaryKey?: string | null;
+  summaryParams?: {
+    opinionCount?: number | null;
+    totalOpinionCount?: number | null;
+    invalidOpinionCount?: number | null;
+  } | null;
+  signalDistribution?: Record<'bullish' | 'neutral' | 'bearish', {
+    count: number;
+    weightShare?: number | null;
+  }> | null;
+  supportingSkills: StrategyDisplayOpinion[];
+  opposingSkills: StrategyDisplayOpinion[];
+  primaryDissent?: StrategyDisplayOpinion | null;
+  conflicts: Array<{
+    conflictType: string;
+    severity: StrategyConflictSeverity;
+    participants: string[];
+  }>;
+  deliberation?: {
+    status?: string | null;
+    mode?: string | null;
+    rounds?: number | null;
+    summary?: {
+      resolutionStatus?: string | null;
+      confidenceAdjustment?: number | null;
+      unresolvedConflictTypes: string[];
+    } | null;
+  } | null;
+  revisionProjection?: {
+    mode: 'preview_only';
+    finalSignalOverridden: false;
+    projectedSignal: StrategySignal;
+    projectedConfidence?: number | null;
+    projectedConflictCount?: number | null;
+    projectedConflictSeverity?: StrategyConflictSeverity | null;
+    projectedConsensusLevel?: StrategyConsensusLevel | null;
+    changedSkillCount?: number | null;
+  } | null;
+}
+
 /** Details section */
 export interface ReportDetails {
   newsContent?: string;
   emptyNewsDisclosure?: string;
   rawResult?: Record<string, unknown>;
+  strategySynthesis?: StrategySynthesis | null;
   contextSnapshot?: Record<string, unknown> & { marketReviewPayload?: MarketReviewPayload };
   analysisContextPackOverview?: AnalysisContextPackOverview | null;
   financialReport?: Record<string, unknown>;
