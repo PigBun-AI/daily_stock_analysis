@@ -1840,7 +1840,10 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                 normalized.attrs["daily_source_health"] = {}
                 if daily_module.daily_history_is_stale(normalized, code=normalized_code):
                     normalized.attrs["daily_stale"] = True
-                    stale_dsa_history = normalized
+                    if not isna(daily_module._latest_daily_bar_date(normalized, code=normalized_code)):
+                        stale_dsa_history = normalized
+                    else:
+                        raise ValueError("invalid daily session")
                 elif cache_dir is not None:
                     cache_path_builder = getattr(daily_module, "_daily_history_cache_path", None)
                     cache_writer = getattr(daily_module, "_write_daily_history_cache", None)

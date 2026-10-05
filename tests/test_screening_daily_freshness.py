@@ -351,7 +351,7 @@ def test_stale_cache_candidate_keeps_latest_valid_bar_and_diagnostics(
 def test_auto_keeps_newest_stale_provider_with_tie_priority(monkeypatch):
     _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
     fetchers = _auto_sources(monkeypatch, {
-        "tencent": _history("2025-06-02"), "sina": _history("2025-06-05"),
+        "tencent": _history("2025-06-03"), "sina": _history("2025-06-05"),
         "akshare": _history("2025-06-05"), "baostock": RuntimeError("offline"),
     })
     result = daily.fetch_daily_history("000001", source="auto", retries=0)
@@ -402,7 +402,39 @@ def test_invalid_session_fallback_ranks_behind_valid_stale_data(
     assert result.attrs["daily_source"] == ("auto" if with_cache else "sina")
     assert result["date"].max() == valid_date
     assert result.attrs["daily_stale"]
-    assert result.attrs["source_errors"] == ["baostock after 1 attempts: offline"]
+    assert result.attrs["source_errors"][-1] == "baostock after 1 attempts: offline"
+    assert len(result.attrs["source_errors"]) == (4 if with_cache else 3)
+    if with_cache:
+        assert path.read_bytes() == before
+    for fetcher in fetchers.values():
+        fetcher.assert_called_once()
+
+
+@pytest.mark.parametrize("now,invalid_date,valid_date", [
+    ("2025-06-08T10:00:00+08:00", "2025-06-07", "2025-06-05"),
+    ("2025-10-01T16:00:00+08:00", "2025-10-01", "2025-09-29"),
+    ("2025-06-06T16:00:00+08:00", "2025-06-09", "2025-06-05"),
+    ("2025-06-06T09:00:00+08:00", "2025-06-06", "2025-06-05"),
+])
+@pytest.mark.parametrize("via_dsa,with_cache", [(False, False), (False, True), (True, False), (True, True)])
+def test_all_invalid_histories_follow_fetch_failure_path(
+    monkeypatch, tmp_path, now, invalid_date, valid_date, via_dsa, with_cache,
+):
+    _freeze_time(monkeypatch, now)
+    malformed = _history(valid_date)
+    malformed.loc[malformed.index[-1], "date"] = invalid_date
+    if with_cache:
+        path = _cache(tmp_path, malformed, now, source="auto")
+        before = path.read_bytes()
+    fetchers = _auto_sources(monkeypatch, {source: malformed for source in ("tencent", "sina", "akshare", "baostock")})
+    if via_dsa:
+        monkeypatch.setattr(screening_service, "get_dsa_daily_history", lambda code, **kwargs: (malformed, "db"))
+    fetcher = screening_service._build_screening_dsa_daily_history_fetcher() if via_dsa else daily.fetch_daily_history
+    with pytest.raises(RuntimeError, match="daily history fetch failed") as caught:
+        fetcher("000001", source="auto", retries=0, cache_dir=tmp_path if with_cache else None)
+    assert caught.value.daily_metadata["source_errors"] == [
+        f"{source} after 1 attempts: invalid daily session" for source in fetchers
+    ]
     if with_cache:
         assert path.read_bytes() == before
     for fetcher in fetchers.values():

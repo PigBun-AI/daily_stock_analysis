@@ -276,6 +276,8 @@ def fetch_daily_history(
                 result.attrs["source_errors"] = list(errors)
                 result.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
                 if daily_history_is_stale(result, code=normalized_code):
+                    if pd.isna(_latest_daily_bar_date(result, code=normalized_code)):
+                        raise ValueError("invalid daily session")
                     result.attrs["daily_stale"] = True
                     if (
                         stale_history is None
@@ -307,7 +309,7 @@ def fetch_daily_history(
             ttl_seconds=cache_ttl_seconds,
             allow_stale=True,
         )
-        if stale_cached is not None and (
+        if stale_cached is not None and not pd.isna(_latest_daily_bar_date(stale_cached, code=normalized_code)) and (
             stale_history is None
             or pd.isna(_latest_daily_bar_date(stale_history, code=normalized_code))
             or _latest_daily_bar_date(stale_cached, code=normalized_code) > _latest_daily_bar_date(stale_history, code=normalized_code)
@@ -480,6 +482,8 @@ def _daily_history_cache_path(
 
 def _latest_daily_bar_date(hist: pd.DataFrame, *, code: str | None = None) -> pd.Timestamp:
     """Return the latest dated, non-null close for degraded candidate comparison."""
+    if code is not None and hist.attrs.get("daily_invalid_session"):
+        return pd.NaT
     date_column = next((column for column in ("date", "日期", "trade_date") if column in hist.columns), None)
     if date_column is None:
         return pd.NaT
@@ -493,6 +497,8 @@ def _latest_daily_bar_date(hist: pd.DataFrame, *, code: str | None = None) -> pd
         current = build_market_phase_context(market=market)
         if current.phase != MarketPhase.UNKNOWN:
             if latest.date() > current.session_date:
+                return pd.NaT
+            if current.phase == MarketPhase.PREMARKET and latest.date() > current.effective_daily_bar_date:
                 return pd.NaT
             bar_phase = build_market_phase_context(
                 market=market, current_time=latest.to_pydatetime().replace(hour=12, tzinfo=timezone.utc),
@@ -568,6 +574,16 @@ def _read_daily_history_cache(
         if not isinstance(columns, list) or not isinstance(data, list):
             return None
         df = pd.DataFrame(data, columns=columns)
+        acquired_phase = build_market_phase_context(
+            market=get_market_for_stock(str(payload.get("key", {}).get("code", ""))), current_time=acquired_at,
+        )
+        last_bar = _latest_daily_bar_date(df)
+        if (
+            acquired_phase.phase == MarketPhase.PREMARKET
+            and not pd.isna(last_bar)
+            and last_bar.date() > acquired_phase.effective_daily_bar_date
+        ):
+            df.attrs["daily_invalid_session"] = True
         metadata = payload.get("metadata")
         if isinstance(metadata, dict):
             for key in ("daily_source", "daily_requested_source", "daily_source_order", "daily_source_order_notes", "source_errors", "daily_source_health", "daily_stale"):
