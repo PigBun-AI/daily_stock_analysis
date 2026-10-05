@@ -1,8 +1,10 @@
 """Daily freshness through real cache, DSA bridge, features, and risk overlay."""
 
+from contextlib import contextmanager
 from datetime import datetime
 import json
 import os
+import time
 from unittest.mock import Mock
 
 import pandas as pd
@@ -24,6 +26,21 @@ def _freeze_time(monkeypatch, value):
     )
     monkeypatch.setattr(daily.time, "time", lambda: now.timestamp())
     return now
+
+
+@contextmanager
+def _timezone(name):
+    previous = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = name
+        time.tzset()
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        time.tzset()
 
 
 def _history(last_date):
@@ -76,6 +93,27 @@ def test_legacy_cache_retains_mtime_fallback(monkeypatch, tmp_path, created_at, 
     stamp = datetime.fromisoformat(acquired).timestamp()
     os.utime(path, (stamp, stamp))
     assert (daily._read_daily_history_cache(path, ttl_seconds=86400) is None) == expected_stale
+
+
+def test_naive_created_at_retains_mtime_across_timezones_and_marks_quality_stale(monkeypatch, tmp_path):
+    with _timezone("UTC"):
+        _freeze_time(monkeypatch, "2025-06-07T15:00:00+08:00")
+        path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T14:00:00+08:00")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["created_at"] = "2025-06-06T14:00:00"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        mtime = datetime.fromisoformat("2025-06-06T14:00:00+08:00").timestamp()
+        os.utime(path, (mtime, mtime))
+
+        assert daily._read_daily_history_cache(path, ttl_seconds=86400) is None
+
+        monkeypatch.setattr(daily, "_fetch_daily_tencent", Mock(side_effect=RuntimeError("offline")))
+        enriched = daily.enrich_daily_features(
+            pd.DataFrame([{"code": "000001"}]), source="tencent", fetch_retries=0, cache_dir=tmp_path,
+        )
+    assert enriched.attrs["daily_success_count"] == 1
+    assert "stale_cache" in enriched.iloc[0]["daily_quality_flags"]
+    assert enriched.iloc[0]["daily_quality_score"] < 100
 
 
 @pytest.mark.parametrize("now,bad_date,valid_date", [

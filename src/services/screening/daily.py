@@ -565,7 +565,9 @@ def _read_daily_history_cache(
             return None
         acquired_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
         try:
-            acquired_at = datetime.fromisoformat(payload["created_at"]).astimezone(timezone.utc)
+            parsed_acquired_at = datetime.fromisoformat(payload["created_at"])
+            if parsed_acquired_at.tzinfo is not None:
+                acquired_at = parsed_acquired_at.astimezone(timezone.utc)
         except (KeyError, TypeError, ValueError):
             pass  # Legacy caches without a valid timestamp retain the mtime fallback.
         is_stale = ttl <= 0 or time.time() - acquired_at.timestamp() > ttl
