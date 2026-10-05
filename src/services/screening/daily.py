@@ -18,7 +18,7 @@ from typing import Callable
 import pandas as pd
 import requests
 
-from src.core.trading_calendar import MarketPhase, build_market_phase_context, get_market_for_stock
+from src.core.trading_calendar import MarketPhase, build_market_phase_context, get_market_for_stock, is_market_open
 from src.services.screening.source_guard import call_with_timeout, parse_source_timeout_seconds
 
 _DAILY_FEATURE_DEFAULTS = {
@@ -482,7 +482,7 @@ def _daily_history_cache_path(
 
 
 def _latest_daily_bar_date(hist: pd.DataFrame, *, code: str | None = None) -> pd.Timestamp:
-    """Return the latest dated, non-null close for degraded candidate comparison."""
+    """Return the latest usable close date, validating all sessions when given a code."""
     if code is not None and hist.attrs.get("daily_invalid_session"):
         return pd.NaT
     date_column = next((column for column in ("date", "日期", "trade_date") if column in hist.columns), None)
@@ -501,11 +501,11 @@ def _latest_daily_bar_date(hist: pd.DataFrame, *, code: str | None = None) -> pd
                 return pd.NaT
             if current.phase == MarketPhase.PREMARKET and latest.date() > current.effective_daily_bar_date:
                 return pd.NaT
-            bar_phase = build_market_phase_context(
-                market=market, current_time=latest.to_pydatetime().replace(hour=12, tzinfo=timezone.utc),
-            )
-            if bar_phase.phase == MarketPhase.NON_TRADING:
-                return pd.NaT
+            # A valid latest bar cannot make an earlier holiday/weekend close
+            # usable: factors consume the entire frame, including those rows.
+            for bar_date in dates.dropna().unique():
+                if not is_market_open(market, pd.Timestamp(bar_date).date()):
+                    return pd.NaT
     return latest
 
 
@@ -566,8 +566,9 @@ def _read_daily_history_cache(
         acquired_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
         try:
             parsed_acquired_at = datetime.fromisoformat(payload["created_at"])
-            if parsed_acquired_at.tzinfo is not None:
-                acquired_at = parsed_acquired_at.astimezone(timezone.utc)
+            # Legacy writers used datetime.now(): astimezone interprets naive
+            # timestamps in the system timezone, including historical DST.
+            acquired_at = parsed_acquired_at.astimezone(timezone.utc)
         except (KeyError, TypeError, ValueError):
             pass  # Legacy caches without a valid timestamp retain the mtime fallback.
         is_stale = ttl <= 0 or time.time() - acquired_at.timestamp() > ttl

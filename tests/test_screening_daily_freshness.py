@@ -43,9 +43,12 @@ def _timezone(name):
         time.tzset()
 
 
-def _history(last_date):
+def _history(last_date, code="000001"):
+    market = trading_calendar.get_market_for_stock(code)
+    calendar = trading_calendar.xcals.get_calendar(trading_calendar.MARKET_EXCHANGE[market])
+    dates = calendar.sessions[calendar.sessions <= pd.Timestamp(last_date)][-65:]
     return pd.DataFrame({
-        "date": pd.bdate_range(end=last_date, periods=65).strftime("%Y-%m-%d"),
+        "date": dates.strftime("%Y-%m-%d"),
         "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.0, "volume": 1000.0,
     })
 
@@ -95,14 +98,22 @@ def test_legacy_cache_retains_mtime_fallback(monkeypatch, tmp_path, created_at, 
     assert (daily._read_daily_history_cache(path, ttl_seconds=86400) is None) == expected_stale
 
 
-def test_naive_created_at_retains_mtime_across_timezones_and_marks_quality_stale(monkeypatch, tmp_path):
-    with _timezone("UTC"):
+@pytest.mark.parametrize("system_timezone,acquired", [
+    ("Asia/Shanghai", "2025-06-06T14:00:00"),
+    ("UTC", "2025-06-06T06:00:00"),
+    ("America/New_York", "2025-06-06T02:00:00"),
+])
+def test_naive_created_at_survives_restore_and_marks_quality_stale(
+    monkeypatch, tmp_path, system_timezone, acquired,
+):
+    monkeypatch.setattr(daily, "_SOURCE_HEALTH", {})
+    with _timezone(system_timezone):
         _freeze_time(monkeypatch, "2025-06-07T15:00:00+08:00")
         path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T14:00:00+08:00")
         payload = json.loads(path.read_text(encoding="utf-8"))
-        payload["created_at"] = "2025-06-06T14:00:00"
+        payload["created_at"] = acquired
         path.write_text(json.dumps(payload), encoding="utf-8")
-        mtime = datetime.fromisoformat("2025-06-06T14:00:00+08:00").timestamp()
+        mtime = datetime.fromisoformat("2025-06-07T15:00:00+08:00").timestamp()
         os.utime(path, (mtime, mtime))
 
         assert daily._read_daily_history_cache(path, ttl_seconds=86400) is None
@@ -116,6 +127,26 @@ def test_naive_created_at_retains_mtime_across_timezones_and_marks_quality_stale
     assert enriched.iloc[0]["daily_quality_score"] < 100
 
 
+@pytest.mark.parametrize("system_timezone,acquired,expected_stale", [
+    ("Asia/Shanghai", "2025-06-06T14:00:00", True),
+    ("Asia/Shanghai", "2025-06-06T16:00:00", False),
+    ("UTC", "2025-06-06T06:00:00", True),
+    ("UTC", "2025-06-06T08:00:00", False),
+    ("America/New_York", "2025-06-06T02:00:00", True),
+    ("America/New_York", "2025-06-06T04:00:00", False),
+])
+def test_naive_cache_restore_uses_system_timezone(
+    monkeypatch, tmp_path, system_timezone, acquired, expected_stale,
+):
+    with _timezone(system_timezone):
+        now = _freeze_time(monkeypatch, "2025-06-06T17:00:00+08:00")
+        path = _cache(tmp_path, _history("2025-06-06"), acquired)
+        os.utime(path, (now.timestamp(), now.timestamp()))
+        assert (daily._read_daily_history_cache(path, ttl_seconds=86400) is None) == expected_stale
+        degraded = daily._read_daily_history_cache(path, ttl_seconds=86400, allow_stale=True)
+        assert bool(degraded.attrs.get("daily_stale")) == expected_stale
+
+
 @pytest.mark.parametrize("now,bad_date,valid_date", [
     ("2025-06-08T10:00:00+08:00", "2025-06-07", "2025-06-06"),
     ("2025-06-08T10:00:00+08:00", "2025-06-08", "2025-06-06"),
@@ -125,10 +156,14 @@ def test_naive_created_at_retains_mtime_across_timezones_and_marks_quality_stale
 ])
 @pytest.mark.parametrize("with_cache", [False, True])
 @pytest.mark.parametrize("via_dsa", [False, True])
-def test_non_trading_bars_continue_fallback(monkeypatch, tmp_path, now, bad_date, valid_date, with_cache, via_dsa):
+@pytest.mark.parametrize("invalid_row", [-1, -2])
+def test_non_trading_bars_continue_fallback(
+    monkeypatch, tmp_path, now, bad_date, valid_date, with_cache, via_dsa, invalid_row,
+):
     _freeze_time(monkeypatch, now)
     malformed = _history(valid_date)
-    malformed.loc[malformed.index[-1], "date"] = bad_date
+    malformed.loc[malformed.index[invalid_row], "date"] = bad_date
+    malformed.loc[malformed.index[invalid_row], "close"] = 1000.0
     if with_cache:
         path = _cache(tmp_path, malformed, now, source="auto")
         assert daily._read_daily_history_cache(path, ttl_seconds=86400) is None
@@ -146,6 +181,7 @@ def test_non_trading_bars_continue_fallback(monkeypatch, tmp_path, now, bad_date
     assert result["date"].max() == valid_date
     assert result.attrs["daily_source_health"]["tencent"]["successes"] == 0
     assert result.attrs["daily_source_health"]["tencent"]["failures"] == 1
+    assert daily.compute_daily_features(result)["ma5"] == 10.0
     if with_cache:
         cached = daily._read_daily_history_cache(path, ttl_seconds=86400)
         assert cached is not None
@@ -172,7 +208,7 @@ def test_cache_requires_session_freshness_in_addition_to_ttl(
     monkeypatch, tmp_path, now, acquired, last_date, code, expected_stale,
 ):
     _freeze_time(monkeypatch, now)
-    path = _cache(tmp_path, _history(last_date), acquired, code)
+    path = _cache(tmp_path, _history(last_date, code), acquired, code)
     cached = daily._read_daily_history_cache(path, ttl_seconds=4 * 86400)
     assert (cached is None) == expected_stale
     degraded = daily._read_daily_history_cache(path, ttl_seconds=4 * 86400, allow_stale=True)
@@ -483,12 +519,13 @@ def test_invalid_session_fallback_ranks_behind_valid_stale_data(
     ("2025-10-09T14:00:00+08:00", "2025-10-08", "2025-09-30"),
 ])
 @pytest.mark.parametrize("via_dsa,with_cache", [(False, False), (False, True), (True, False), (True, True)])
+@pytest.mark.parametrize("invalid_row", [-1, -2])
 def test_all_invalid_histories_follow_fetch_failure_path(
-    monkeypatch, tmp_path, now, invalid_date, valid_date, via_dsa, with_cache,
+    monkeypatch, tmp_path, now, invalid_date, valid_date, via_dsa, with_cache, invalid_row,
 ):
     _freeze_time(monkeypatch, now)
     malformed = _history(valid_date)
-    malformed.loc[malformed.index[-1], "date"] = invalid_date
+    malformed.loc[malformed.index[invalid_row], "date"] = invalid_date
     if with_cache:
         path = _cache(tmp_path, malformed, now, source="auto")
         before = path.read_bytes()
@@ -636,3 +673,14 @@ def test_compact_dates_and_missing_latest_close(monkeypatch):
     assert not daily.daily_history_is_stale(hist, code="000001")
     hist.loc[1, "close"] = float("nan")
     assert daily.daily_history_is_stale(hist, code="000001")
+
+
+@pytest.mark.parametrize("invalid_close", [None, "invalid"])
+@pytest.mark.parametrize("date_column,close_column", [("date", "close"), ("日期", "收盘"), ("trade_date", "close")])
+def test_session_validation_ignores_rows_without_usable_close(monkeypatch, invalid_close, date_column, close_column):
+    _freeze_time(monkeypatch, "2025-06-09T16:00:00+08:00")
+    hist = pd.DataFrame({date_column: ["2025-06-06", "2025-06-08", "2025-06-09"], close_column: [10, invalid_close, 11]})
+    assert not daily.daily_history_is_stale(hist, code="000001")
+    hist.loc[1, close_column] = 1000
+    assert daily.daily_history_is_stale(hist, code="000001")
+    assert pd.isna(daily._latest_daily_bar_date(hist, code="000001"))
