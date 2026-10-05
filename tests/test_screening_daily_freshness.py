@@ -441,6 +441,32 @@ def test_all_invalid_histories_follow_fetch_failure_path(
         fetcher.assert_called_once()
 
 
+def test_invalid_sessions_trip_source_circuit_and_valid_stale_response_recovers(monkeypatch):
+    _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
+    clock = [1000.0]
+    monkeypatch.setattr(daily.time, "monotonic", lambda: clock[0])
+    fetchers = _auto_sources(monkeypatch, {
+        "tencent": _history("2025-06-09"), "sina": _history("2025-06-06"),
+        "akshare": RuntimeError("unused"), "baostock": RuntimeError("unused"),
+    })
+    for _ in range(3):
+        with pytest.raises(RuntimeError, match="invalid daily session"):
+            daily.fetch_daily_history("000001", source="tencent", retries=0)
+    health = daily._daily_source_health_snapshot(("tencent",))["tencent"]
+    assert health["failures"] == 3
+    assert health["cooldown_remaining_seconds"] > 0
+    result = daily.fetch_daily_history("000001", source="auto", retries=0)
+    assert result.attrs["daily_source"] == "sina"
+    assert fetchers["tencent"].call_count == 3
+    _freeze_time(monkeypatch, "2025-06-06T16:06:00+08:00")
+    clock[0] += 360
+    fetchers["tencent"].return_value = _history("2025-06-05")
+    result = daily.fetch_daily_history("000001", source="tencent", retries=0)
+    assert result.attrs["daily_stale"]
+    assert result.attrs["daily_source_health"]["tencent"]["failures"] == 0
+    assert result.attrs["daily_source_health"]["tencent"]["cooldown_remaining_seconds"] == 0
+
+
 def test_auto_keeps_stale_history_when_remaining_sources_fail(monkeypatch):
     _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
     fetchers = _auto_sources(monkeypatch, {

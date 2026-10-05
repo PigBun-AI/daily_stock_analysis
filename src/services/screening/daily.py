@@ -268,6 +268,9 @@ def fetch_daily_history(
                         normalized_code,
                         lookback_days=normalized_lookback_days,
                     )
+                is_stale = daily_history_is_stale(result, code=normalized_code)
+                if is_stale and pd.isna(_latest_daily_bar_date(result, code=normalized_code)):
+                    raise ValueError("invalid daily session")
                 _record_source_success(current, rows=len(result))
                 result.attrs["daily_source"] = current
                 result.attrs["daily_requested_source"] = src
@@ -275,9 +278,7 @@ def fetch_daily_history(
                 result.attrs["daily_source_order_notes"] = list(source_order_notes)
                 result.attrs["source_errors"] = list(errors)
                 result.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
-                if daily_history_is_stale(result, code=normalized_code):
-                    if pd.isna(_latest_daily_bar_date(result, code=normalized_code)):
-                        raise ValueError("invalid daily session")
+                if is_stale:
                     result.attrs["daily_stale"] = True
                     if (
                         stale_history is None
