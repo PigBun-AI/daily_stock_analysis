@@ -1875,7 +1875,14 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                 cache_dir=cache_dir,
                 cache_ttl_seconds=cache_ttl_seconds,
             )
-            if stale_dsa_history is not None and daily_module.daily_history_is_stale(native_history, code=code):
+            if (
+                stale_dsa_history is not None
+                and daily_module.daily_history_is_stale(native_history, code=code)
+                and not (
+                    daily_module._latest_daily_bar_date(native_history)
+                    > daily_module._latest_daily_bar_date(stale_dsa_history)
+                )
+            ):
                 for key in ("source_errors", "daily_source_order", "daily_source_order_notes", "daily_source_health"):
                     if key in native_history.attrs:
                         stale_dsa_history.attrs[key] = native_history.attrs[key]

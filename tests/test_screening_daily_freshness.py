@@ -348,6 +348,37 @@ def test_stale_cache_candidate_keeps_latest_valid_bar_and_diagnostics(
         fetcher.assert_called_once()
 
 
+def test_auto_keeps_newest_stale_provider_with_tie_priority(monkeypatch):
+    _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
+    fetchers = _auto_sources(monkeypatch, {
+        "tencent": _history("2025-06-02"), "sina": _history("2025-06-05"),
+        "akshare": _history("2025-06-05"), "baostock": RuntimeError("offline"),
+    })
+    result = daily.fetch_daily_history("000001", source="auto", retries=0)
+    assert result.attrs["daily_source"] == "sina"
+    assert result["date"].max() == "2025-06-05"
+    assert result.attrs["daily_stale"]
+    assert result.attrs["source_errors"] == ["baostock after 1 attempts: offline"]
+    for fetcher in fetchers.values():
+        fetcher.assert_called_once()
+
+
+@pytest.mark.parametrize("now", ["2025-06-06T09:00:00+08:00", "2025-06-06T14:00:00+08:00"])
+def test_preopen_placeholder_cache_is_not_reused_intraday(monkeypatch, tmp_path, now):
+    _freeze_time(monkeypatch, now)
+    path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T09:00:00+08:00")
+    assert daily._read_daily_history_cache(path, ttl_seconds=86400) is None
+    assert daily._read_daily_history_cache(path, ttl_seconds=86400, allow_stale=True).attrs["daily_stale"]
+    if now.startswith("2025-06-06T09"):
+        fetchers = _auto_sources(monkeypatch, {
+            "tencent": _history("2025-06-06"), "sina": _history("2025-06-05"),
+            "akshare": RuntimeError("unused"), "baostock": RuntimeError("unused"),
+        })
+        result = daily.fetch_daily_history("000001", source="auto", retries=0)
+        assert result.attrs["daily_source"] == "sina"
+        fetchers["akshare"].assert_not_called()
+
+
 def test_auto_keeps_stale_history_when_remaining_sources_fail(monkeypatch):
     _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
     fetchers = _auto_sources(monkeypatch, {
@@ -402,21 +433,22 @@ def test_dsa_stale_history_remains_available_when_all_native_sources_fail(monkey
 
 
 @pytest.mark.parametrize("first_fails", [False, True])
-def test_dsa_stale_history_keeps_priority_when_native_sources_are_also_stale(monkeypatch, tmp_path, first_fails):
+@pytest.mark.parametrize("dsa_date,native_date", [("2025-06-05", "2025-06-04"), ("2025-06-05", "2025-06-05"), ("2025-06-04", "2025-06-05")])
+def test_dsa_stale_history_keeps_priority_when_native_sources_are_also_stale(monkeypatch, tmp_path, first_fails, dsa_date, native_date):
     _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
-    path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T14:00:00+08:00", source="auto")
+    path = _cache(tmp_path, _history("2025-06-03"), "2025-06-06T14:00:00+08:00", source="auto")
     before = path.read_bytes()
-    outcomes = {source: _history("2025-06-04") for source in ("tencent", "sina", "akshare", "baostock")}
+    outcomes = {source: _history(native_date) for source in ("tencent", "sina", "akshare", "baostock")}
     if first_fails:
         outcomes["tencent"] = RuntimeError("offline")
     fetchers = _auto_sources(monkeypatch, outcomes)
     monkeypatch.setattr(
-        screening_service, "get_dsa_daily_history", lambda code, **kwargs: (_history("2025-06-05"), "db"),
+        screening_service, "get_dsa_daily_history", lambda code, **kwargs: (_history(dsa_date), "db"),
     )
     fetcher = screening_service._build_screening_dsa_daily_history_fetcher()
     result = fetcher("000001", source="auto", retries=0, cache_dir=tmp_path)
-    assert result.attrs["daily_source"] == "dsa:db"
-    assert result["date"].max() == "2025-06-05"
+    assert result.attrs["daily_source"] == ("dsa:db" if dsa_date >= native_date else ("sina" if first_fails else "tencent"))
+    assert result["date"].max() == max(dsa_date, native_date)
     assert result.attrs["daily_stale"]
     assert path.read_bytes() == before
     for source in fetchers.values():

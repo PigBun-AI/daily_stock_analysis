@@ -277,7 +277,11 @@ def fetch_daily_history(
                 result.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
                 if daily_history_is_stale(result, code=normalized_code):
                     result.attrs["daily_stale"] = True
-                    if stale_history is None:
+                    if (
+                        stale_history is None
+                        or pd.isna(_latest_daily_bar_date(stale_history))
+                        or _latest_daily_bar_date(result) > _latest_daily_bar_date(stale_history)
+                    ):
                         stale_history = result
                     source_order_notes.append(f"{current}: stale daily history")
                     break
@@ -509,13 +513,15 @@ def daily_history_is_stale(
     latest = _latest_daily_bar_date(hist)
     if pd.isna(latest):
         return True
-    if current.phase == MarketPhase.NON_TRADING and latest.date() != current.effective_daily_bar_date:
+    if current.phase in (MarketPhase.NON_TRADING, MarketPhase.PREMARKET) and latest.date() != current.effective_daily_bar_date:
         return True
     if not current.effective_daily_bar_date <= latest.date() <= current.session_date:
         return True
     if fetched_at is not None:
         acquired = build_market_phase_context(market=market, current_time=fetched_at)
         if acquired.phase != MarketPhase.UNKNOWN:
+            if acquired.phase in (MarketPhase.NON_TRADING, MarketPhase.PREMARKET) and latest.date() != acquired.effective_daily_bar_date:
+                return True
             return acquired.effective_daily_bar_date < current.effective_daily_bar_date
     return False
 
@@ -595,7 +601,7 @@ def _write_daily_history_cache(
                 "daily_source_health": df.attrs.get("daily_source_health", {}),
                 "daily_stale": bool(df.attrs.get("daily_stale")),
             },
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.fromtimestamp(time.time(), tz=timezone.utc).isoformat(),
             "frame": json.loads(df.to_json(orient="split", date_format="iso", force_ascii=False)),
         }
         tmp_path = path.with_name(f".{path.name}.{time.time_ns()}.tmp")
