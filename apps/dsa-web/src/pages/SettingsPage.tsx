@@ -862,17 +862,19 @@ const SettingsPage: React.FC = () => {
     && !currentChangedItems.some((item) => item.key === 'SCHEDULE_ENABLED');
   const effectiveHasDirty = hasDirty || hasRuntimeSchedulerMismatchInDraft;
   const hasUnsavedEdits = effectiveHasDirty || llmChannelHasDirty;
-  const hasPendingSave = isSaving || llmChannelIsSaving;
+  const hasPendingSave = isSaving || llmChannelIsSaving || isImportingEnv;
   const shouldGuardDeparture = hasUnsavedEdits || hasPendingSave;
-  const resetAllDrafts = () => {
-    if (hasPendingSave) {
-      return;
-    }
+  const clearAllDrafts = () => {
     resetDraft();
     setSchedulerOverrideFromUi(null);
     setLlmChannelDraftItems([]);
     setLlmChannelHasDirty(false);
     setLocalDraftResetToken((current) => current + 1);
+  };
+  const resetAllDrafts = () => {
+    if (!hasPendingSave) {
+      clearAllDrafts();
+    }
   };
   const effectiveDirtyCount = dirtyCount + (hasRuntimeSchedulerMismatchInDraft ? 1 : 0);
 
@@ -1040,6 +1042,9 @@ const SettingsPage: React.FC = () => {
         content,
         reloadNow: true,
       });
+      // The server accepted the replacement. Discard every local draft even
+      // if the following refresh fails or the model fingerprint is unchanged.
+      clearAllDrafts();
       const reloaded = await load();
       if (!reloaded) {
         setEnvBackupActionError(createParsedApiError({
@@ -1093,6 +1098,9 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleSaveConfig = async () => {
+    if (isImportingEnv) {
+      return;
+    }
     const changedItems = getChangedItems();
     const syncRuntimeSchedulerState =
       schedulerOverrideFromUi !== null
@@ -1221,7 +1229,7 @@ const SettingsPage: React.FC = () => {
                 key={item.key}
                 item={item}
                 value={item.value}
-                disabled={isSaving}
+                disabled={isSaving || isImportingEnv}
                 onChange={setDraftValue}
                 issues={fieldIssues}
               />
@@ -1248,7 +1256,7 @@ const SettingsPage: React.FC = () => {
                 key={item.key}
                 item={item}
                 value={item.value}
-                disabled={isSaving}
+                disabled={isSaving || isImportingEnv}
                 onChange={setDraftValue}
                 issues={issueByKey[item.key] || []}
               />
@@ -1294,7 +1302,7 @@ const SettingsPage: React.FC = () => {
               size="sm"
               className="px-2.5"
               onClick={() => void handleSaveConfig()}
-              disabled={!effectiveHasDirty || isSaving || isLoading}
+              disabled={!effectiveHasDirty || isSaving || isLoading || isImportingEnv}
               isLoading={isSaving}
               loadingText={t('settings.saving')}
             >
@@ -1380,7 +1388,7 @@ const SettingsPage: React.FC = () => {
                       type="button"
                       variant={screeningEnabled ? 'settings-secondary' : 'settings-primary'}
                       onClick={() => void updateScreeningEnabled(!screeningEnabled)}
-                      disabled={isSaving || isLoading || isUpdatingScreening}
+                      disabled={isSaving || isLoading || isImportingEnv || isUpdatingScreening}
                       isLoading={isUpdatingScreening}
                       loadingText={screeningEnabled ? t('settings.disablingScreening') : t('settings.enablingScreening')}
                     >
@@ -1406,7 +1414,7 @@ const SettingsPage: React.FC = () => {
               <SchedulerSettingsCard
                 draftResetToken={localDraftResetToken}
                 items={itemsByCategory.system || []}
-                disabled={isSaving || isLoading}
+                disabled={isSaving || isLoading || isImportingEnv}
                 issueByKey={issueByKey}
                 statusRefreshToken={schedulerStatusRefreshToken}
                 onSchedulerStateChange={handleSchedulerRuntimeStateChange}
@@ -1588,7 +1596,7 @@ const SettingsPage: React.FC = () => {
                     await refreshAfterExternalSave(['STOCK_LIST']);
                     void refreshSetupStatus();
                   }}
-                  disabled={isSaving || isLoading}
+                  disabled={isSaving || isLoading || isImportingEnv}
                 />
               </SettingsSectionCard>
             ) : null}
@@ -1601,7 +1609,7 @@ const SettingsPage: React.FC = () => {
                 <GenerationBackendStatusPanel
                   items={generationBackendDraftItems}
                   maskToken={maskToken}
-                  disabled={isSaving || isLoading}
+                  disabled={isSaving || isLoading || isImportingEnv}
                 />
                 <LLMChannelEditor
                   draftResetToken={localDraftResetToken}
@@ -1617,7 +1625,7 @@ const SettingsPage: React.FC = () => {
                     await refreshAfterExternalSave(updatedItems.map((item) => item.key));
                     void refreshSetupStatus();
                   }}
-                  disabled={isSaving || isLoading}
+                  disabled={isSaving || isLoading || isImportingEnv}
                 />
               </SettingsSectionCard>
               </div>
@@ -1634,7 +1642,7 @@ const SettingsPage: React.FC = () => {
                 <NotificationTestPanel
                   items={rawActiveItems.map((item) => ({ key: item.key, value: String(item.value ?? '') }))}
                   maskToken={maskToken}
-                  disabled={isSaving || isLoading}
+                  disabled={isSaving || isLoading || isImportingEnv}
                 />
               </SettingsPanelErrorBoundary>
             ) : null}
@@ -1653,7 +1661,7 @@ const SettingsPage: React.FC = () => {
                     maskToken={maskToken}
                     selectedBackend={selectedAgentBackend}
                     agentArch={selectedAgentArch}
-                    disabled={isSaving || isLoading}
+                    disabled={isSaving || isLoading || isImportingEnv}
                     onUseSingleAgent={() => setDraftValue('AGENT_ARCH', 'single')}
                     onEnableAgentMode={() => setDraftValue('AGENT_MODE', 'true')}
                   />

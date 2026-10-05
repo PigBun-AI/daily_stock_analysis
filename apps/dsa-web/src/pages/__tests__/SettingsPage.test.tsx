@@ -3052,6 +3052,75 @@ describe('SettingsPage', () => {
       expect(screen.getByLabelText('渠道名称')).toHaveValue('');
     });
 
+    it.each(['reloaded', 'reload-failed', 'import-failed'] as const)(
+      'handles confirmed import with hidden model and scheduler drafts: %s', async (outcome) => {
+        editorTestMode.real = true;
+        const pendingImport = createDeferred<{ updatedKeys: string[] }>();
+        importEnv.mockReturnValueOnce(pendingImport.promise);
+        getSchedulerStatus.mockResolvedValue({ enabled: true, running: false, scheduleTimes: ['18:00'] });
+        const initial = buildSystemConfigState({ activeCategory: 'ai_model' });
+        const schedulerTemplate = initial.itemsByCategory.system[0];
+        const configState = {
+          ...initial,
+          itemsByCategory: {
+            ...initial.itemsByCategory,
+            system: [...initial.itemsByCategory.system, {
+              ...schedulerTemplate, key: 'SCHEDULE_ENABLED', value: 'false',
+              schema: { ...(schedulerTemplate.schema as Record<string, unknown>), key: 'SCHEDULE_ENABLED' },
+            }],
+          },
+        };
+        useSystemConfigMock.mockReturnValue(configState);
+        const page = renderSettingsPage();
+        fireEvent.click(await screen.findByRole('button', { name: /primary/i }));
+        fireEvent.change(await screen.findByLabelText('渠道名称'), { target: { value: '' } });
+        useSystemConfigMock.mockReturnValue({ ...configState, activeCategory: 'system' });
+        page.rerenderSettingsPage();
+        await waitFor(() => expect(screen.getByTestId('scheduler-enabled-checkbox')).toBeChecked());
+        fireEvent.click(screen.getByTestId('scheduler-enabled-checkbox'));
+        await waitFor(() => expect(screen.getByTestId('scheduler-enabled-checkbox')).not.toBeChecked());
+        fireEvent.click(screen.getByRole('button', { name: '导入 .env' }));
+        expect(await screen.findByText('导入会覆盖当前草稿')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: '继续导入' }));
+        const fileInput = page.container.querySelector('input[type="file"]') as HTMLInputElement;
+        load.mockResolvedValueOnce(outcome !== 'reload-failed');
+        fireEvent.change(fileInput, {
+          target: { files: [new File(['STOCK_LIST=300750\n'], 'backup.env', { type: 'text/plain' })] },
+        });
+        await waitFor(() => expect(importEnv).toHaveBeenCalledTimes(1));
+        expect(resetDraft).not.toHaveBeenCalled();
+        expect(screen.getByLabelText('渠道名称')).toHaveValue('');
+        expect(screen.getByRole('button', { name: '重置' })).toBeDisabled();
+
+        if (outcome === 'import-failed') {
+          await act(async () => pendingImport.reject(new Error('import rejected')));
+          expect(await screen.findByText('import rejected')).toBeInTheDocument();
+          expect(resetDraft).not.toHaveBeenCalled();
+          expect(screen.getByTestId('scheduler-enabled-checkbox')).not.toBeChecked();
+          expect(beforeUnloadListeners).toHaveLength(1);
+        } else {
+          await act(async () => pendingImport.resolve({ updatedKeys: ['STOCK_LIST'] }));
+          await waitFor(() => expect(resetDraft).toHaveBeenCalledTimes(1));
+          await waitFor(() => expect(beforeUnloadListeners).toHaveLength(0));
+          expect(screen.getByTestId('scheduler-enabled-checkbox')).toBeChecked();
+          expect(screen.getByRole('button', { name: /保存配置/ })).toBeDisabled();
+          if (outcome === 'reload-failed') {
+            expect(screen.getByText('配置已导入但刷新失败')).toBeInTheDocument();
+          }
+        }
+        useSystemConfigMock.mockReturnValue(configState);
+        page.rerenderSettingsPage();
+        if (!screen.queryByLabelText('渠道名称')) {
+          fireEvent.click(await screen.findByRole('button', { name: /primary/i }));
+        }
+        expect(await screen.findByLabelText('渠道名称')).toHaveValue(outcome === 'import-failed' ? '' : 'primary');
+        if (outcome !== 'import-failed') {
+          act(() => { void page.router.navigate('/chat'); });
+          await waitFor(() => expect(page.router.state.location.pathname).toBe('/chat'));
+        }
+      },
+    );
+
     it('guards LLM-only edits and clears local editors on the actual Reset button', async () => {
       useSystemConfigMock.mockReturnValue(buildSystemConfigState({ activeCategory: 'ai_model', hasDirty: false }));
       const { router } = renderSettingsPage();

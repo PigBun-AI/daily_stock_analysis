@@ -24,6 +24,12 @@ async function fixture(page: Page, requireLogin = false) {
       return;
     }
     if (path === '/api/v1/auth/login') loggedIn = true;
+    if (path === '/api/v1/system/config/import') {
+      // Replace a generic value without changing the model fingerprint.
+      items[0].value = 'imported';
+      await route.fulfill({ json: { updatedKeys: ['FIXTURE_VALUE'], configVersion: 'fixture-v2', warnings: [] } });
+      return;
+    }
     const json = path === '/api/v1/auth/status'
       ? { authEnabled: requireLogin, loggedIn, passwordSet: true, setupState: 'enabled' }
       : path === '/api/v1/system/config'
@@ -122,4 +128,33 @@ test('protected deep links survive the data-router login boundary', async ({ pag
   await page.getByRole('button', { name: '授权进入工作台', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\?category=system#desktop-version-info$/);
   await expect(page.getByTestId('scheduler-enabled-checkbox')).toBeVisible();
+});
+
+test('accepted backup import discards hidden model drafts and scheduler overrides', async ({ page }) => {
+  await fixture(page, true);
+  await page.goto('/settings');
+  await page.locator('#password').fill('fixture-only-password');
+  await page.getByRole('button', { name: '授权进入工作台', exact: true }).click();
+  const categories = page.getByRole('navigation', { name: '配置分类' });
+  await categories.getByRole('button', { name: /AI 模型/ }).click();
+  await page.getByRole('button', { name: /primary/i }).click();
+  await page.getByLabel('渠道名称', { exact: true }).fill('');
+  await categories.getByRole('button', { name: /系统设置/ }).click();
+  const enabled = page.getByTestId('scheduler-enabled-checkbox');
+  await expect(enabled).toBeChecked();
+  await enabled.uncheck();
+  await page.getByRole('button', { name: '导入 .env', exact: true }).click();
+  await expect(page.getByText('导入会覆盖当前草稿', { exact: true })).toBeVisible();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: '继续导入', exact: true }).click();
+  await (await chooser).setFiles({ name: 'backup.env', mimeType: 'text/plain', buffer: Buffer.from('FIXTURE_VALUE=imported\n') });
+  await expect(page.getByText('已导入 .env 备份并重新加载配置。', { exact: true })).toBeVisible();
+  await expect(enabled).toBeChecked();
+  await categories.getByRole('button', { name: /AI 模型/ }).click();
+  await page.getByRole('button', { name: /primary/i }).click();
+  await expect(page.getByLabel('渠道名称', { exact: true })).toHaveValue('primary');
+  await categories.getByRole('button', { name: /基础设置/ }).click();
+  await expect(page.getByRole('textbox', { name: 'Fixture value' })).toHaveValue('imported');
+  await page.getByRole('link', { name: '告警', exact: true }).click();
+  await expect(page).toHaveURL(/\/alerts$/);
 });
