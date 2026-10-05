@@ -1,6 +1,7 @@
 """Daily freshness through real cache, DSA bridge, features, and risk overlay."""
 
 from datetime import datetime
+import json
 import os
 from unittest.mock import Mock
 
@@ -35,9 +36,63 @@ def _history(last_date):
 def _cache(tmp_path, hist, acquired_at, code="000001", source="tencent"):
     path = daily._daily_history_cache_path(tmp_path, code=code, source=source, lookback_days=120)
     daily._write_daily_history_cache(path, hist, code=code, source=source, lookback_days=120)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["created_at"] = acquired_at
+    path.write_text(json.dumps(payload), encoding="utf-8")
     stamp = datetime.fromisoformat(acquired_at).timestamp()
     os.utime(path, (stamp, stamp))
     return path
+
+
+@pytest.mark.parametrize("acquired,expected_stale", [
+    ("2025-06-06T14:00:00+08:00", True),
+    ("2025-06-06T16:00:00+08:00", False),
+    ("2025-06-05T16:00:00+08:00", True),
+])
+def test_cache_restore_keeps_persisted_acquisition_time(monkeypatch, tmp_path, acquired, expected_stale):
+    _freeze_time(monkeypatch, "2025-06-06T17:00:00+08:00")
+    path = _cache(tmp_path, _history("2025-06-06"), acquired)
+    restored = datetime.fromisoformat("2025-06-06T17:00:00+08:00").timestamp()
+    os.utime(path, (restored, restored))
+    cached = daily._read_daily_history_cache(path, ttl_seconds=86400)
+    assert (cached is None) == expected_stale
+    assert daily._read_daily_history_cache(path, ttl_seconds=86400, allow_stale=True) is not None
+
+
+@pytest.mark.parametrize("created_at", [None, "invalid"])
+def test_legacy_cache_retains_mtime_fallback(monkeypatch, tmp_path, created_at):
+    _freeze_time(monkeypatch, "2025-06-06T17:00:00+08:00")
+    path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T16:00:00+08:00")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if created_at is None:
+        payload.pop("created_at")
+    else:
+        payload["created_at"] = created_at
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    stamp = datetime.fromisoformat("2025-06-06T16:00:00+08:00").timestamp()
+    os.utime(path, (stamp, stamp))
+    assert daily._read_daily_history_cache(path, ttl_seconds=86400) is not None
+
+
+@pytest.mark.parametrize("now,bad_date,valid_date", [
+    ("2025-06-08T10:00:00+08:00", "2025-06-07", "2025-06-06"),
+    ("2025-06-08T10:00:00+08:00", "2025-06-08", "2025-06-06"),
+    ("2025-10-01T16:00:00+08:00", "2025-10-01", "2025-09-30"),
+])
+def test_non_trading_bars_continue_fallback(monkeypatch, now, bad_date, valid_date):
+    _freeze_time(monkeypatch, now)
+    malformed = _history(valid_date)
+    malformed.loc[malformed.index[-1], "date"] = bad_date
+    fetchers = _auto_sources(monkeypatch, {
+        "tencent": malformed, "sina": _history(valid_date),
+        "akshare": RuntimeError("unused"), "baostock": RuntimeError("unused"),
+    })
+    result = daily.fetch_daily_history("000001", source="auto", retries=0)
+    assert result.attrs["daily_source"] == "sina"
+    assert not result.attrs.get("daily_stale")
+    fetchers["tencent"].assert_called_once()
+    fetchers["sina"].assert_called_once()
+    fetchers["akshare"].assert_not_called()
 
 
 @pytest.mark.parametrize("now,acquired,last_date,code,expected_stale", [

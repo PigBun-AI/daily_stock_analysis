@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] 选股缓存以持久化获取时间判断新鲜度，防止桌面恢复改写 mtime 误用盘中数据，并拒绝周末与休市日期的伪日线。
+
 - [修复] 选股日线全部降级时比较文件缓存与实时陈旧数据的最新有效日期，保留更新缓存及降级诊断，不覆盖 last-good。
 
 - [修复] 选股日线全源失败时向 DSA 降级结果传递逐来源错误、顺序和健康状态，避免聚合错误少算质量扣分与低质量风险。

@@ -509,6 +509,8 @@ def daily_history_is_stale(
     latest = _latest_daily_bar_date(hist)
     if pd.isna(latest):
         return True
+    if current.phase == MarketPhase.NON_TRADING and latest.date() != current.effective_daily_bar_date:
+        return True
     if not current.effective_daily_bar_date <= latest.date() <= current.session_date:
         return True
     if fetched_at is not None:
@@ -530,14 +532,16 @@ def _read_daily_history_cache(
         return None
 
     ttl = _DAILY_HISTORY_CACHE_TTL_SECONDS if ttl_seconds is None else float(ttl_seconds)
-    is_stale = ttl <= 0 or time.time() - stat.st_mtime > ttl
-    if is_stale and not allow_stale:
-        return None
-
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if payload.get("version") != _DAILY_HISTORY_CACHE_VERSION:
             return None
+        acquired_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        try:
+            acquired_at = datetime.fromisoformat(payload["created_at"]).astimezone(timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            pass  # Legacy caches without a valid timestamp retain the mtime fallback.
+        is_stale = ttl <= 0 or time.time() - acquired_at.timestamp() > ttl
         frame = payload.get("frame")
         if not isinstance(frame, dict):
             return None
@@ -554,7 +558,7 @@ def _read_daily_history_cache(
         is_stale = is_stale or daily_history_is_stale(
             df,
             code=str(payload.get("key", {}).get("code", "")),
-            fetched_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            fetched_at=acquired_at,
         )
         if is_stale and not allow_stale:
             return None
@@ -591,7 +595,7 @@ def _write_daily_history_cache(
                 "daily_source_health": df.attrs.get("daily_source_health", {}),
                 "daily_stale": bool(df.attrs.get("daily_stale")),
             },
-            "created_at": datetime.now().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "frame": json.loads(df.to_json(orient="split", date_format="iso", force_ascii=False)),
         }
         tmp_path = path.with_name(f".{path.name}.{time.time_ns()}.tmp")
