@@ -297,12 +297,18 @@ def fetch_daily_history(
                     break
                 time.sleep(min(0.5 * (attempt + 1), 2.0))
 
-    if stale_history is None and cache_path is not None:
-        stale_history = _read_daily_history_cache(
+    if cache_path is not None:
+        stale_cached = _read_daily_history_cache(
             cache_path,
             ttl_seconds=cache_ttl_seconds,
             allow_stale=True,
         )
+        if stale_cached is not None and (
+            stale_history is None
+            or pd.isna(_latest_daily_bar_date(stale_history))
+            or _latest_daily_bar_date(stale_cached) > _latest_daily_bar_date(stale_history)
+        ):
+            stale_history = stale_cached
     if stale_history is not None:
         stale_history.attrs["daily_stale"] = True
         stale_history.attrs["daily_source_order"] = list(sources)
@@ -468,6 +474,18 @@ def _daily_history_cache_path(
     return Path(cache_dir) / f"{safe_code}_{safe_source}_{int(lookback_days)}_{digest}.json"
 
 
+def _latest_daily_bar_date(hist: pd.DataFrame) -> pd.Timestamp:
+    """Return the latest dated, non-null close for degraded candidate comparison."""
+    date_column = next((column for column in ("date", "日期", "trade_date") if column in hist.columns), None)
+    if date_column is None:
+        return pd.NaT
+    dates = pd.to_datetime(hist[date_column].astype(str).str[:10], format="mixed", errors="coerce")
+    close_column = next((column for column in ("close", "收盘") if column in hist.columns), None)
+    if close_column is not None:
+        dates = dates.where(pd.to_numeric(hist[close_column], errors="coerce").notna())
+    return dates.max()
+
+
 def daily_history_is_stale(
     hist: pd.DataFrame,
     *,
@@ -486,16 +504,9 @@ def daily_history_is_stale(
     if current.phase == MarketPhase.UNKNOWN:
         return False
 
-    date_column = next((column for column in ("date", "日期", "trade_date") if column in hist.columns), None)
-    if date_column is None:
-        return True
     # Daily dates may be compact YYYYMMDD integers or ISO timestamps. Keep the
     # provider's session date instead of converting date-only bars through UTC.
-    dates = pd.to_datetime(hist[date_column].astype(str).str[:10], format="mixed", errors="coerce")
-    close_column = next((column for column in ("close", "收盘") if column in hist.columns), None)
-    if close_column is not None:
-        dates = dates.where(pd.to_numeric(hist[close_column], errors="coerce").notna())
-    latest = dates.max()
+    latest = _latest_daily_bar_date(hist)
     if pd.isna(latest):
         return True
     if not current.effective_daily_bar_date <= latest.date() <= current.session_date:

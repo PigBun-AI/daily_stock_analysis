@@ -253,12 +253,44 @@ def test_auto_uses_stale_history_only_after_all_sources_are_stale(monkeypatch, t
     result = daily.fetch_daily_history("000001", source="auto", retries=2, cache_dir=tmp_path if with_cache else None)
     for fetcher in fetchers.values():
         fetcher.assert_called_once()
-    assert result.attrs["daily_source"] == "tencent"
+    assert result.attrs["daily_source"] == ("auto" if with_cache else "tencent")
+    assert result["date"].max() == ("2025-06-06" if with_cache else "2025-06-05")
     assert result.attrs["daily_stale"]
     assert len(result.attrs["daily_source_order_notes"]) == 4
     assert result.attrs["source_errors"] == []
     assert "stale_cache" in daily.compute_daily_features(result)["daily_quality_flags"]
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("cache_date,invalid_latest,expected", [
+    ("2025-06-06", False, "auto"),
+    ("2025-06-06", True, "sina"),
+    ("2025-06-05", False, "sina"),
+    ("2025-06-04", False, "sina"),
+])
+def test_stale_cache_candidate_keeps_latest_valid_bar_and_diagnostics(
+    monkeypatch, tmp_path, cache_date, invalid_latest, expected,
+):
+    _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
+    cached = _history(cache_date)
+    if invalid_latest:
+        cached.loc[cached.index[-1], "close"] = None
+    path = _cache(tmp_path, cached, "2025-06-06T14:00:00+08:00", source="auto")
+    before = path.read_bytes()
+    fetchers = _auto_sources(monkeypatch, {
+        "tencent": RuntimeError("offline"), "sina": _history("2025-06-05"),
+        "akshare": _history("2025-06-05"), "baostock": _history("2025-06-05"),
+    })
+    result = daily.fetch_daily_history("000001", source="auto", retries=0, cache_dir=tmp_path)
+    assert result.attrs["daily_source"] == expected
+    assert result.attrs["daily_stale"]
+    assert result.attrs["source_errors"] == ["tencent after 1 attempts: offline"]
+    assert result.attrs["daily_source_order"] == list(fetchers)
+    assert result.attrs["daily_source_health"]["tencent"]["failures"] == 1
+    assert "stale_cache" in daily.compute_daily_features(result)["daily_quality_flags"]
+    assert path.read_bytes() == before
+    for fetcher in fetchers.values():
+        fetcher.assert_called_once()
 
 
 def test_auto_keeps_stale_history_when_remaining_sources_fail(monkeypatch):
