@@ -24,6 +24,7 @@ async function fixture(page: Page, requireLogin = false) {
       return;
     }
     if (path === '/api/v1/auth/login') loggedIn = true;
+    if (path === '/api/v1/auth/logout') loggedIn = false;
     if (path === '/api/v1/system/config/import') {
       // Replace a generic value without changing the model fingerprint.
       items[0].value = 'imported';
@@ -157,4 +158,29 @@ test('accepted backup import discards hidden model drafts and scheduler override
   await expect(page.getByRole('textbox', { name: 'Fixture value' })).toHaveValue('imported');
   await page.getByRole('link', { name: '告警', exact: true }).click();
   await expect(page).toHaveURL(/\/alerts$/);
+});
+
+test('logout explicitly confirms draft loss and Cancel preserves the session', async ({ page }, testInfo) => {
+  await fixture(page, true);
+  let logoutRequests = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/v1/auth/logout') logoutRequests += 1;
+  });
+  await page.goto('/settings');
+  await page.locator('#password').fill('fixture-only-password');
+  await page.getByRole('button', { name: '授权进入工作台', exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'Fixture value' });
+  await input.fill('keep-until-confirmed');
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.getByText(/退出会丢弃本页未保存的设置/)).toBeVisible();
+  const path = testInfo.outputPath('settings-logout-confirm.png');
+  await page.screenshot({ path, fullPage: true, animations: 'disabled' });
+  await testInfo.attach('settings-logout-confirm', { path, contentType: 'image/png' });
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(input).toHaveValue('keep-until-confirmed');
+  expect(logoutRequests).toBe(0);
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await page.getByRole('button', { name: '确认退出', exact: true }).click();
+  await expect(page).toHaveURL(/\/login\?redirect=/);
+  expect(logoutRequests).toBe(1);
 });

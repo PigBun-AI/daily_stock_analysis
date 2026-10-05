@@ -89,6 +89,7 @@ const zh = {
   'layout.logout': '退出',
   'layout.logoutConfirm': '确认退出',
   'layout.logoutMessage': '确认退出当前登录状态吗？退出后需要重新输入密码。',
+  'layout.logoutSettingsMessage': '退出会丢弃本页未保存的设置，请先保存需要保留的修改。已发出的保存请求不会因退出而撤销。确认退出当前登录状态吗？',
   'layout.logoutTitle': '退出登录',
 
   'usage.breakdown': 'Breakdown',
@@ -1105,6 +1106,7 @@ const en: Record<UiTextKey, string> = {
   'layout.logout': 'Log out',
   'layout.logoutConfirm': 'Log out',
   'layout.logoutMessage': 'Log out of the current session? You will need to enter the password again.',
+  'layout.logoutSettingsMessage': 'Logging out discards unsaved settings on this page. Save any changes you want to keep first. Requests already sent will not be cancelled by logout. Log out of the current session?',
   'layout.logoutTitle': 'Log out',
 
   'usage.breakdown': 'Breakdown',
