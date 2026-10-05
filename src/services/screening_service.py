@@ -1283,6 +1283,9 @@ class ScreeningService:
             "candidate_count": len(selected),
             "run_id": raw_data.get("run_id") or uuid.uuid4().hex,
             "strategy": raw_data.get("strategy") or strategy,
+            "strategy_version": raw_data.get("strategy_version") or "",
+            "strategy_category": raw_data.get("strategy_category") or "",
+            "effective_factor_weights": _valid_positive_factor_weights(raw_data.get("effective_factor_weights")),
             "market": raw_data.get("market") or market,
             "snapshot_count": raw_data.get("snapshot_count"),
             "snapshot_source": raw_data.get("snapshot_source") or "",
@@ -1817,6 +1820,7 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
         cache_dir: str | Path | None = None,
         cache_ttl_seconds: float | None = None,
     ) -> Any:
+        stale_dsa_history = None
         try:
             dsa_df, dsa_source = get_dsa_daily_history(code, lookback_days=lookback_days)
             normalized = _normalize_dsa_daily_history(dsa_df)
@@ -1833,7 +1837,10 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                 normalized.attrs["daily_source_order_notes"] = []
                 normalized.attrs["source_errors"] = []
                 normalized.attrs["daily_source_health"] = {}
-                if cache_dir is not None:
+                if daily_module.daily_history_is_stale(normalized, code=normalized_code):
+                    normalized.attrs["daily_stale"] = True
+                    stale_dsa_history = normalized
+                elif cache_dir is not None:
                     cache_path_builder = getattr(daily_module, "_daily_history_cache_path", None)
                     cache_writer = getattr(daily_module, "_write_daily_history_cache", None)
                     if callable(cache_path_builder) and callable(cache_writer):
@@ -1850,7 +1857,8 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                             source=source,
                             lookback_days=int(lookback_days),
                         )
-                return normalized
+                if stale_dsa_history is None:
+                    return normalized
         except Exception as exc:
             logger.warning(
                 "Screening DSA daily history fetch failed for %s; falling back to Screening source %s: %s",
@@ -1858,14 +1866,21 @@ def _build_screening_dsa_daily_history_fetcher() -> Optional[Callable[..., Any]]
                 source,
                 exc,
             )
-        return original_fetch(
-            code,
-            lookback_days=lookback_days,
-            source=source,
-            retries=retries,
-            cache_dir=cache_dir,
-            cache_ttl_seconds=cache_ttl_seconds,
-        )
+        try:
+            return original_fetch(
+                code,
+                lookback_days=lookback_days,
+                source=source,
+                retries=retries,
+                cache_dir=cache_dir,
+                cache_ttl_seconds=cache_ttl_seconds,
+            )
+        except RuntimeError as exc:
+            if stale_dsa_history is None:
+                raise
+            stale_dsa_history.attrs["source_errors"] = [str(exc)]
+            logger.warning("Screening uses stale DSA daily history for %s: %s", code, exc)
+            return stale_dsa_history
 
     return fetch_daily_history_with_dsa
 
@@ -3313,7 +3328,7 @@ def _normalize_dsa_daily_history(raw_df: Any) -> Any:
 
     import pandas as pd
 
-    df = pd.DataFrame(raw_df).copy()
+    df = raw_df.copy() if isinstance(raw_df, pd.DataFrame) else pd.DataFrame(raw_df)
     if df.empty:
         return df
 
@@ -3327,6 +3342,7 @@ def _normalize_dsa_daily_history(raw_df: Any) -> Any:
         "amount": ("amount", "成交额"),
     }
     normalized = pd.DataFrame(index=df.index)
+    normalized.attrs.update(df.attrs)
     for target, candidates in aliases.items():
         source_column = next((column for column in candidates if column in df.columns), None)
         if source_column is not None:

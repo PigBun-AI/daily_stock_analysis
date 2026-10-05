@@ -357,6 +357,9 @@ class ScreeningHistoryTestCase(unittest.TestCase):
         raw_result = {
             "run_id": "screen-run-1",
             "strategy": "dual_low",
+            "strategy_version": "1.1",
+            "strategy_category": "value",
+            "effective_factor_weights": {"value": 0.6, "liquidity": 0.4},
             "market": "cn",
             "snapshot_source": "sina",
             "snapshot_count": 5000,
@@ -407,6 +410,9 @@ class ScreeningHistoryTestCase(unittest.TestCase):
         stored = self.db.get_screening_run("screen-run-1")
         self.assertIsNotNone(stored)
         assert stored is not None
+        for key in ("strategy_version", "strategy_category", "effective_factor_weights"):
+            self.assertEqual(response[key], raw_result[key])
+            self.assertEqual(stored["result"][key], raw_result[key])
         self.assertEqual(stored["candidate_count"], 1)
         self.assertEqual(stored["result"]["candidates"][0]["code"], "600519")
         explanations = response["candidates"][0]["why_selected"]

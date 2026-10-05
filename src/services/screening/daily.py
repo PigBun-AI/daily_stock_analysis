@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -18,6 +18,7 @@ from typing import Callable
 import pandas as pd
 import requests
 
+from src.core.trading_calendar import MarketPhase, build_market_phase_context, get_market_for_stock
 from src.services.screening.source_guard import call_with_timeout, parse_source_timeout_seconds
 
 _DAILY_FEATURE_DEFAULTS = {
@@ -109,6 +110,9 @@ def enrich_daily_features(
                 cache_dir=cache_dir,
                 cache_ttl_seconds=cache_ttl_seconds,
             )
+            if daily_history_is_stale(hist, code=code):
+                hist = hist.copy()
+                hist.attrs["daily_stale"] = True
             features = compute_daily_features(hist)
             features["daily_source"] = str(hist.attrs.get("daily_source", ""))
             metadata = {
@@ -270,7 +274,9 @@ def fetch_daily_history(
                 result.attrs["daily_source_order_notes"] = list(source_order_notes)
                 result.attrs["source_errors"] = list(errors)
                 result.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
-                if cache_path is not None:
+                if daily_history_is_stale(result, code=normalized_code):
+                    result.attrs["daily_stale"] = True
+                if cache_path is not None and not result.attrs.get("daily_stale"):
                     _write_daily_history_cache(
                         cache_path,
                         result,
@@ -449,6 +455,45 @@ def _daily_history_cache_path(
     return Path(cache_dir) / f"{safe_code}_{safe_source}_{int(lookback_days)}_{digest}.json"
 
 
+def daily_history_is_stale(
+    hist: pd.DataFrame,
+    *,
+    code: str,
+    fetched_at: datetime | None = None,
+) -> bool:
+    """Check bar coverage and whether a cached partial bar predates a close.
+
+    Calendar failures retain the existing TTL-only behavior. Intraday bars are
+    allowed, but cannot be reused as completed bars after the session closes.
+    """
+    if bool(hist.attrs.get("daily_stale")):
+        return True
+    market = get_market_for_stock(code)
+    current = build_market_phase_context(market=market)
+    if current.phase == MarketPhase.UNKNOWN:
+        return False
+
+    date_column = next((column for column in ("date", "日期", "trade_date") if column in hist.columns), None)
+    if date_column is None:
+        return True
+    # Daily dates may be compact YYYYMMDD integers or ISO timestamps. Keep the
+    # provider's session date instead of converting date-only bars through UTC.
+    dates = pd.to_datetime(hist[date_column].astype(str).str[:10], format="mixed", errors="coerce")
+    close_column = next((column for column in ("close", "收盘") if column in hist.columns), None)
+    if close_column is not None:
+        dates = dates.where(pd.to_numeric(hist[close_column], errors="coerce").notna())
+    latest = dates.max()
+    if pd.isna(latest):
+        return True
+    if not current.effective_daily_bar_date <= latest.date() <= current.session_date:
+        return True
+    if fetched_at is not None:
+        acquired = build_market_phase_context(market=market, current_time=fetched_at)
+        if acquired.phase != MarketPhase.UNKNOWN:
+            return acquired.effective_daily_bar_date < current.effective_daily_bar_date
+    return False
+
+
 def _read_daily_history_cache(
     path: Path,
     *,
@@ -479,9 +524,16 @@ def _read_daily_history_cache(
         df = pd.DataFrame(data, columns=columns)
         metadata = payload.get("metadata")
         if isinstance(metadata, dict):
-            for key in ("daily_source", "daily_requested_source", "daily_source_order", "daily_source_order_notes", "source_errors", "daily_source_health"):
+            for key in ("daily_source", "daily_requested_source", "daily_source_order", "daily_source_order_notes", "source_errors", "daily_source_health", "daily_stale"):
                 if key in metadata:
                     df.attrs[key] = metadata[key]
+        is_stale = is_stale or daily_history_is_stale(
+            df,
+            code=str(payload.get("key", {}).get("code", "")),
+            fetched_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+        )
+        if is_stale and not allow_stale:
+            return None
         if is_stale:
             df.attrs["daily_stale"] = True
         return df
@@ -513,6 +565,7 @@ def _write_daily_history_cache(
                 "daily_source_order_notes": list(df.attrs.get("daily_source_order_notes", [])),
                 "source_errors": list(df.attrs.get("source_errors", [])),
                 "daily_source_health": df.attrs.get("daily_source_health", {}),
+                "daily_stale": bool(df.attrs.get("daily_stale")),
             },
             "created_at": datetime.now().isoformat(),
             "frame": json.loads(df.to_json(orient="split", date_format="iso", force_ascii=False)),
