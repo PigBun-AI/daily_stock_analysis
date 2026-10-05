@@ -261,8 +261,12 @@ def _render_ranking_prompt(hints: str, context: str, candidates_text: str) -> st
 你不能推荐候选池外股票，不能修改硬筛条件，不能给目标价或承诺收益。你的价值在于：
 1. 结合策略偏好，对候选之间做跨股票比较；
 2. 识别结构化数据暴露不出的潜在催化、风格匹配和风险点；
-3. 对行业/概念热度和 DSA 补充的行情、基本面、新闻做语义归因，但不能把单日热度当作唯一买入理由；
+3. 对行业/概念热度和 DSA 补充的行情、基本面、新闻与事件做语义归因，但不能把单日热度当作唯一买入理由；
 4. 给出简短、可审计、可复核的排序理由。
+新闻/事件仅在有限候选中采集。未采集、无结果或查询失败均不代表风险已排除；
+比较候选时区分资料覆盖与风险本身，不因某候选缺少新闻而视其更安全。
+结合来源、原始发布时间和摘要判断消息是否相关且及时；检索时间不等于发布时间，
+发布时间未知、过期或在未来的内容不能作为已确认的近期事件。将事件风险判断写入已有 risk/risk_flags。
 
 ## 排序依据
 {hints}
@@ -491,13 +495,11 @@ def _format_dsa_context_for_prompt(p: Pick) -> str:
         raw_results = news_payload.get("results") if isinstance(news_payload, dict) else []
         if isinstance(raw_results, list):
             news_items = [item for item in raw_results if isinstance(item, dict)]
-    titles = [
-        _truncate_text(str(item.get("title") or "").strip(), 80)
-        for item in news_items[:3]
-        if isinstance(item, dict) and item.get("title")
-    ]
-    if titles:
-        parts.append(f"news_titles={';'.join(titles)}")
+    news_payload = context.get("news")
+    if news_items:
+        news_payload = {**(news_payload if isinstance(news_payload, dict) else {}), "results": news_items}
+    parts.append(f"news_evidence={_format_dsa_evidence_for_prompt(news_payload)}")
+    parts.append(f"event_evidence={_format_dsa_evidence_for_prompt(context.get('events'))}")
 
     warnings = context.get("warnings") if isinstance(context.get("warnings"), list) else []
     warning_text = [str(item) for item in warnings[:3] if item]
@@ -505,6 +507,28 @@ def _format_dsa_context_for_prompt(p: Pick) -> str:
         parts.append(f"warnings={';'.join(warning_text)}")
 
     return "; ".join(parts) if parts else "none"
+
+
+def _format_dsa_evidence_for_prompt(payload: object) -> str:
+    """Keep bounded source evidence without inventing publication freshness."""
+    if not isinstance(payload, dict):
+        return "not_collected"
+    results = payload.get("results")
+    items = [item for item in results if isinstance(item, dict)] if isinstance(results, list) else []
+    if not items:
+        if payload.get("skipped"):
+            return "not_collected"
+        return "no_results" if payload.get("success") else "unavailable"
+    evidence = []
+    for item in items[:3]:
+        fields = (
+            ("source", 40), ("published_date", 40), ("retrieved_at", 40),
+            ("title", 80), ("snippet", 120), ("url", 120),
+        )
+        evidence.append(
+            ",".join(f"{key}={_truncate_text(str(item.get(key) or 'unknown'), limit)}" for key, limit in fields)
+        )
+    return " | ".join(evidence)
 
 
 def _truncate_text(value: str, limit: int) -> str:

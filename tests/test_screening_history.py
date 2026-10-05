@@ -141,7 +141,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                     ),
                     patch(
                         "src.services.screening_service._enrich_candidates_with_dsa",
-                        side_effect=lambda candidates: (candidates, {}),
+                        side_effect=lambda candidates, **_kwargs: (candidates, {}),
                     ),
                 ):
                     response = service.screen(strategy="dual_low", market="cn", max_results=1)
@@ -202,7 +202,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
             ),
             patch(
                 "src.services.screening_service._enrich_candidates_with_dsa",
-                side_effect=lambda candidates: (candidates, {}),
+                side_effect=lambda candidates, **_kwargs: (candidates, {}),
             ),
         ):
             response = service.screen(strategy="dual_low", market="cn", max_results=1)
@@ -270,7 +270,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                     ),
                     patch(
                         "src.services.screening_service._enrich_candidates_with_dsa",
-                        side_effect=lambda candidates: (candidates, {}),
+                        side_effect=lambda candidates, **_kwargs: (candidates, {}),
                     ),
                 ):
                     response = service.screen(strategy="dual_low", market="cn", max_results=2)
@@ -346,7 +346,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
                         "run_id": run_id, "candidates": ranked.picks, "effective_factor_weights": {"value": 1},
                     }),
                     patch("src.services.screening_service._enrich_candidates_with_dsa",
-                          side_effect=lambda candidates: (candidates, {})),
+                          side_effect=lambda candidates, **_kwargs: (candidates, {})),
                 ):
                     response = service.screen(strategy="dual_low", market="cn", max_results=1)
                 candidate = response["candidates"][0]
@@ -490,7 +490,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
             ),
             patch(
                 "src.services.screening_service._enrich_candidates_with_dsa",
-                side_effect=lambda candidates: (
+                side_effect=lambda candidates, **_kwargs: (
                     candidates,
                     {
                         "enabled": True,
@@ -565,7 +565,7 @@ class ScreeningHistoryTestCase(unittest.TestCase):
             ),
             patch(
                 "src.services.screening_service._enrich_candidates_with_dsa",
-                side_effect=lambda candidates: (
+                side_effect=lambda candidates, **_kwargs: (
                     candidates,
                     {
                         "enabled": True,
