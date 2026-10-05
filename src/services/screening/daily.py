@@ -491,12 +491,15 @@ def _latest_daily_bar_date(hist: pd.DataFrame, *, code: str | None = None) -> pd
     dates = pd.to_datetime(hist[date_column].astype(str).str[:10], format="mixed", errors="coerce")
     close_column = next((column for column in ("close", "收盘") if column in hist.columns), None)
     if close_column is not None:
-        dates = dates.where(pd.to_numeric(hist[close_column], errors="coerce").notna())
+        dates = dates[pd.to_numeric(hist[close_column], errors="coerce").notna()]
     latest = dates.max()
     if code is not None and not pd.isna(latest):
         market = get_market_for_stock(code)
         current = build_market_phase_context(market=market)
         if current.phase != MarketPhase.UNKNOWN:
+            # Unparseable dates with usable prices also reach factor calculation.
+            if dates.isna().any():
+                return pd.NaT
             if latest.date() > current.session_date:
                 return pd.NaT
             if current.phase == MarketPhase.PREMARKET and latest.date() > current.effective_daily_bar_date:
@@ -566,9 +569,10 @@ def _read_daily_history_cache(
         acquired_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
         try:
             parsed_acquired_at = datetime.fromisoformat(payload["created_at"])
-            # Legacy writers used datetime.now(): astimezone interprets naive
-            # timestamps in the system timezone, including historical DST.
-            acquired_at = parsed_acquired_at.astimezone(timezone.utc)
+            # Legacy writers omitted their timezone. It cannot be recovered
+            # from the reading host after migration, so retain the mtime.
+            if parsed_acquired_at.tzinfo is not None:
+                acquired_at = parsed_acquired_at.astimezone(timezone.utc)
         except (KeyError, TypeError, ValueError):
             pass  # Legacy caches without a valid timestamp retain the mtime fallback.
         is_stale = ttl <= 0 or time.time() - acquired_at.timestamp() > ttl
