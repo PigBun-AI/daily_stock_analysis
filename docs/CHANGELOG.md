@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [修复] Web 设置页统一保护普通配置、模型渠道与调度草稿，重置和成功导入清理全部旧草稿，保存及导入期间避免编辑和离开竞态；登录后保留安全站内目标及 query/hash。
 
 - [修复] 选股快照或日线过滤后无候选时仍保存当次策略的实际归一化因子权重，保证空结果的响应与历史记录可追溯。
 - [修复] 选股日线缓存增加交易日与收盘时段新鲜度核验，旧 DSA 日线先尝试原生来源，auto 模式继续尝试滞后来源之后的备用来源；所有陈旧来源均不覆盖 last-good 缓存，降级结果进入现有质量评分和风险提示；运行历史保留策略版本、类别与实际因子权重。
