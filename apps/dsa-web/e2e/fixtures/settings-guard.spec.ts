@@ -50,7 +50,7 @@ test('back/forward and cancel/discard preserve drafts and exact destinations', a
   for (const [name, width, height] of [['desktop', 1440, 900], ['mobile', 390, 844]] as const) {
     await page.setViewportSize({ width, height });
     const path = testInfo.outputPath(`settings-guard-${name}.png`);
-    await page.screenshot({ path, fullPage: true });
+    await page.screenshot({ path, fullPage: true, animations: 'disabled' });
     await testInfo.attach(`settings-guard-${name}`, { path, contentType: 'image/png' });
   }
   await page.getByRole('button', { name: '取消', exact: true }).click();
