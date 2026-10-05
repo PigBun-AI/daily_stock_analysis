@@ -529,7 +529,9 @@ def daily_history_is_stale(
 
     # Daily dates may be compact YYYYMMDD integers or ISO timestamps. Keep the
     # provider's session date instead of converting date-only bars through UTC.
-    latest = _latest_daily_bar_date(hist)
+    # Validate actual sessions even intraday: the range between the last close
+    # and today's session can contain weekends or holidays after reopening.
+    latest = _latest_daily_bar_date(hist, code=code)
     if pd.isna(latest):
         return True
     if current.phase in (MarketPhase.NON_TRADING, MarketPhase.PREMARKET) and latest.date() != current.effective_daily_bar_date:

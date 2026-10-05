@@ -60,36 +60,59 @@ def test_cache_restore_keeps_persisted_acquisition_time(monkeypatch, tmp_path, a
 
 
 @pytest.mark.parametrize("created_at", [None, "invalid"])
-def test_legacy_cache_retains_mtime_fallback(monkeypatch, tmp_path, created_at):
+@pytest.mark.parametrize("acquired,expected_stale", [
+    ("2025-06-06T14:00:00+08:00", True),
+    ("2025-06-06T16:00:00+08:00", False),
+])
+def test_legacy_cache_retains_mtime_fallback(monkeypatch, tmp_path, created_at, acquired, expected_stale):
     _freeze_time(monkeypatch, "2025-06-06T17:00:00+08:00")
-    path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T16:00:00+08:00")
+    path = _cache(tmp_path, _history("2025-06-06"), acquired)
     payload = json.loads(path.read_text(encoding="utf-8"))
     if created_at is None:
         payload.pop("created_at")
     else:
         payload["created_at"] = created_at
     path.write_text(json.dumps(payload), encoding="utf-8")
-    stamp = datetime.fromisoformat("2025-06-06T16:00:00+08:00").timestamp()
+    stamp = datetime.fromisoformat(acquired).timestamp()
     os.utime(path, (stamp, stamp))
-    assert daily._read_daily_history_cache(path, ttl_seconds=86400) is not None
+    assert (daily._read_daily_history_cache(path, ttl_seconds=86400) is None) == expected_stale
 
 
 @pytest.mark.parametrize("now,bad_date,valid_date", [
     ("2025-06-08T10:00:00+08:00", "2025-06-07", "2025-06-06"),
     ("2025-06-08T10:00:00+08:00", "2025-06-08", "2025-06-06"),
     ("2025-10-01T16:00:00+08:00", "2025-10-01", "2025-09-30"),
+    ("2025-06-09T14:00:00+08:00", "2025-06-08", "2025-06-09"),
+    ("2025-10-09T14:00:00+08:00", "2025-10-08", "2025-10-09"),
 ])
-def test_non_trading_bars_continue_fallback(monkeypatch, now, bad_date, valid_date):
+@pytest.mark.parametrize("with_cache", [False, True])
+@pytest.mark.parametrize("via_dsa", [False, True])
+def test_non_trading_bars_continue_fallback(monkeypatch, tmp_path, now, bad_date, valid_date, with_cache, via_dsa):
     _freeze_time(monkeypatch, now)
     malformed = _history(valid_date)
     malformed.loc[malformed.index[-1], "date"] = bad_date
+    if with_cache:
+        path = _cache(tmp_path, malformed, now, source="auto")
+        assert daily._read_daily_history_cache(path, ttl_seconds=86400) is None
     fetchers = _auto_sources(monkeypatch, {
         "tencent": malformed, "sina": _history(valid_date),
         "akshare": RuntimeError("unused"), "baostock": RuntimeError("unused"),
     })
-    result = daily.fetch_daily_history("000001", source="auto", retries=0)
+    fetcher = daily.fetch_daily_history
+    if via_dsa:
+        monkeypatch.setattr(screening_service, "get_dsa_daily_history", lambda code, **kwargs: (malformed, "db"))
+        fetcher = screening_service._build_screening_dsa_daily_history_fetcher()
+    result = fetcher("000001", source="auto", retries=0, cache_dir=tmp_path if with_cache else None)
     assert result.attrs["daily_source"] == "sina"
     assert not result.attrs.get("daily_stale")
+    assert result["date"].max() == valid_date
+    assert result.attrs["daily_source_health"]["tencent"]["successes"] == 0
+    assert result.attrs["daily_source_health"]["tencent"]["failures"] == 1
+    if with_cache:
+        cached = daily._read_daily_history_cache(path, ttl_seconds=86400)
+        assert cached is not None
+        assert cached["date"].max() == valid_date
+        assert cached.attrs["daily_source"] == "sina"
     fetchers["tencent"].assert_called_once()
     fetchers["sina"].assert_called_once()
     fetchers["akshare"].assert_not_called()
@@ -119,9 +142,12 @@ def test_cache_requires_session_freshness_in_addition_to_ttl(
     assert bool(degraded.attrs.get("daily_stale")) == expected_stale
 
 
-def test_close_transition_refreshes_partial_bar_and_replaces_cache(monkeypatch, tmp_path):
-    _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
+@pytest.mark.parametrize("restored", [False, True])
+def test_close_transition_refreshes_partial_bar_and_replaces_cache(monkeypatch, tmp_path, restored):
+    now = _freeze_time(monkeypatch, "2025-06-06T16:00:00+08:00")
     path = _cache(tmp_path, _history("2025-06-06"), "2025-06-06T14:00:00+08:00")
+    if restored:
+        os.utime(path, (now.timestamp(), now.timestamp()))
     refreshed = _history("2025-06-06")
     refreshed.loc[64, "close"] = 10.5
     fetch = Mock(return_value=refreshed)
@@ -415,6 +441,8 @@ def test_invalid_session_fallback_ranks_behind_valid_stale_data(
     ("2025-10-01T16:00:00+08:00", "2025-10-01", "2025-09-29"),
     ("2025-06-06T16:00:00+08:00", "2025-06-09", "2025-06-05"),
     ("2025-06-06T09:00:00+08:00", "2025-06-06", "2025-06-05"),
+    ("2025-06-09T14:00:00+08:00", "2025-06-08", "2025-06-06"),
+    ("2025-10-09T14:00:00+08:00", "2025-10-08", "2025-09-30"),
 ])
 @pytest.mark.parametrize("via_dsa,with_cache", [(False, False), (False, True), (True, False), (True, True)])
 def test_all_invalid_histories_follow_fetch_failure_path(
