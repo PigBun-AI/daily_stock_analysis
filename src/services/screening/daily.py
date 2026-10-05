@@ -184,7 +184,8 @@ def fetch_daily_history(
     free sources. Without a token it starts with Tencent. Sina is a second
     direct HTTP K-line source before wrapper-based fallbacks. ``yfinance`` is
     explicit-only (never part of ``auto``) and expects a US ticker rather than
-    an A-share code.
+    an A-share code. Lagging bars do not stop the auto fallback chain; they are
+    retained for degraded use only if no source provides fresh history.
     """
     normalized_code = _normalize_daily_code(code)
     normalized_lookback_days = int(lookback_days)
@@ -216,12 +217,12 @@ def fetch_daily_history(
 
     attempts = max(int(retries), 0) + 1
     errors: list[str] = []
+    stale_history: pd.DataFrame | None = None
     for current in sources:
         disabled_reason = _source_disabled_reason(current)
         if disabled_reason:
             errors.append(f"{current}: {disabled_reason}")
             continue
-        last_error: Exception | None = None
         for attempt in range(attempts):
             try:
                 if current == "yfinance":
@@ -276,7 +277,11 @@ def fetch_daily_history(
                 result.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
                 if daily_history_is_stale(result, code=normalized_code):
                     result.attrs["daily_stale"] = True
-                if cache_path is not None and not result.attrs.get("daily_stale"):
+                    if stale_history is None:
+                        stale_history = result
+                    source_order_notes.append(f"{current}: stale daily history")
+                    break
+                if cache_path is not None:
                     _write_daily_history_cache(
                         cache_path,
                         result,
@@ -286,26 +291,25 @@ def fetch_daily_history(
                     )
                 return result
             except Exception as exc:  # noqa: BLE001 - aggregated below
-                last_error = exc
                 if attempt >= attempts - 1:
+                    errors.append(f"{current} after {attempts} attempts: {exc}")
+                    _record_source_failure(current, exc)
                     break
                 time.sleep(min(0.5 * (attempt + 1), 2.0))
-        errors.append(f"{current} after {attempts} attempts: {last_error}")
-        _record_source_failure(current, last_error)
 
-    if cache_path is not None:
-        stale = _read_daily_history_cache(
+    if stale_history is None and cache_path is not None:
+        stale_history = _read_daily_history_cache(
             cache_path,
             ttl_seconds=cache_ttl_seconds,
             allow_stale=True,
         )
-        if stale is not None:
-            stale.attrs["daily_stale"] = True
-            stale.attrs["daily_source_order"] = list(sources)
-            stale.attrs["daily_source_order_notes"] = list(source_order_notes)
-            stale.attrs["source_errors"] = list(errors)
-            stale.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
-            return stale
+    if stale_history is not None:
+        stale_history.attrs["daily_stale"] = True
+        stale_history.attrs["daily_source_order"] = list(sources)
+        stale_history.attrs["daily_source_order_notes"] = list(source_order_notes)
+        stale_history.attrs["source_errors"] = list(errors)
+        stale_history.attrs["daily_source_health"] = _daily_source_health_snapshot(sources)
+        return stale_history
 
     raise RuntimeError(
         f"daily history fetch failed for {normalized_code}: {'; '.join(errors)}"
