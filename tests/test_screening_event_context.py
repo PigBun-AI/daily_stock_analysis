@@ -1,6 +1,6 @@
 """Event evidence through real ranking, risk, response, and history paths."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 from types import SimpleNamespace
 
@@ -40,6 +40,7 @@ def screening_run(monkeypatch):
         screening=ScreeningConfig(enabled=True, factor_weights={"value": 1}),
     )
     state = {"mode": "fresh", "version": 1, "flag_event": False, "model_fails": False, "calls": [], "prompts": []}
+    state["retrieved_at"] = "2026-01-02T03:04:05+00:00"
     snapshot = pd.DataFrame([
         {"code": f"00000{index}", "name": f"00000{index}", "price": 10, "change_pct": 0,
          "amount": 200_000_000, "pe_ratio": index + 5, "pb_ratio": 1, "volume_ratio": 1, "turnover_rate": 2}
@@ -66,7 +67,7 @@ def screening_run(monkeypatch):
                 "snippet": "监管问询" if code == "000001" else "Routine filing",
                 "source": "test-provider", "url": f"https://example.test/{kind}/{code}",
                 "published_date": None if state["mode"] == "undated" else datetime.now().date().isoformat(),
-                "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                "retrieved_at": None if state["mode"] == "undated" else state["retrieved_at"],
             }]
         return {"success": True, "results": items}
 
@@ -118,6 +119,7 @@ def test_event_evidence_reaches_llm_then_existing_risk_overlay_and_history(scree
     evidence = _prompt_evidence(_prompt_candidates(prompt)[0], "event")["items"][0]
     assert evidence["source"] == "test-provider"
     assert evidence["published_date"] == datetime.now().date().isoformat()
+    assert evidence["retrieved_at"] == screening_run.state["retrieved_at"]
     assert evidence["url"] == "https://example.test/event/000001"
     calls = screening_run.state["calls"]
     llm_position = next(index for index, call in enumerate(calls) if call[0] == "llm")
@@ -129,12 +131,15 @@ def test_event_evidence_reaches_llm_then_existing_risk_overlay_and_history(scree
     assert selected["name"] == "Resolved 000002"
     assert selected["dsa_context"]["profile"] == "pre_rank_research"
     assert selected["dsa_events"][0]["title"] == "event 000002 v1"
+    for field in ("dsa_news", "dsa_events"):
+        assert selected[field][0]["retrieved_at"] == screening_run.state["retrieved_at"]
     assert selected["factor_scores"]
     assert selected["raw"]["factor_scores"] == selected["factor_scores"]
     stored = screening_run.database.get_screening_run(response["run_id"])
     assert stored is not None
     persisted = stored["result"]
     assert persisted["candidates"][0]["dsa_events"] == selected["dsa_events"]
+    assert persisted["candidates"][0]["dsa_news"] == selected["dsa_news"]
 
 
 @pytest.mark.parametrize("mode", ["fresh", "empty", "undated", "failed"])
@@ -200,6 +205,7 @@ def test_newly_selected_candidate_outside_pre_rank_cap_is_enriched_once(screenin
     selected = response["candidates"][0]
     assert selected["code"] == "000004"
     assert selected["dsa_context"]["profile"] == "post_rank_full"
+    assert selected["dsa_events"][0]["retrieved_at"] == screening_run.state["retrieved_at"]
 
 
 def test_llm_failure_reuses_pre_rank_queries_for_factor_fallback(screening_run):
@@ -276,3 +282,18 @@ def test_insufficient_budget_omits_source_data_instead_of_clipping_json():
     assert "untrusted-source" not in prompt and "untrusted-market" not in prompt
     assert '{"ranked": []}' in prompt
     assert any("hard_cap" in warning for warning in degradation)
+
+
+def test_search_adapter_preserves_upstream_fetch_time_and_leaves_missing_time_unknown():
+    response = SimpleNamespace(success=True, results=[
+        SimpleNamespace(title="Cached", retrieved_at="2026-01-02T03:04:05+00:00"),
+        SimpleNamespace(title="No timestamp"),
+        SimpleNamespace(title="Outside result limit", retrieved_at="2026-01-03T03:04:05+00:00"),
+    ])
+    payload = screening_service._normalize_dsa_search_response(response, max_results=2)
+    assert len(payload["results"]) == 2
+    assert payload["results"][0]["retrieved_at"] == "2026-01-02T03:04:05+00:00"
+    assert payload["results"][1]["retrieved_at"] is None
+    evidence = json.loads(ranker._format_dsa_evidence_for_prompt(payload))
+    assert evidence["items"][0]["retrieved_at"] == "2026-01-02T03:04:05+00:00"
+    assert evidence["items"][1]["retrieved_at"] == "unknown"

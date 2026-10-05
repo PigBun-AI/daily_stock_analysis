@@ -3472,6 +3472,9 @@ def _normalize_dsa_search_response(response: Any, *, max_results: int) -> Dict[s
                 "url": getattr(item, "url", ""),
                 "source": getattr(item, "source", ""),
                 "published_date": getattr(item, "published_date", None),
+                # Preserve upstream fetch time; normalization may read cached
+                # results and must not mark them as retrieved just now.
+                "retrieved_at": getattr(item, "retrieved_at", None),
             }
         )
     return _remove_non_finite_json_values(
