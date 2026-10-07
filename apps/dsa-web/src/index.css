@@ -62,7 +62,7 @@
   --color-danger-alert-border: 349 82% 56%;
   --color-danger-alert-bg: 349 82% 56%;
   /* Tailwind-compatible accent colors (Light theme) */
-  --color-cyan-400: 188 78% 41%;
+  --color-cyan-400: 221 39% 24%;
   --color-emerald-400: 152 69% 40%;
   --color-red-400: 0 90% 55%;
   --color-amber-400: 37 92% 50%;
@@ -340,7 +340,7 @@
   --color-danger-alert-bg: 349 100% 63%;
   --autocomplete-hover-bg: hsl(213 55% 62%);
   /* Tailwind-compatible accent colors (Dark theme) */
-  --color-cyan-400: 188 78% 41%;
+  --color-cyan-400: 213 55% 62%;
   --color-emerald-400: 152 69% 40%;
   --color-red-400: 0 90% 55%;
   --color-amber-400: 37 92% 50%;
@@ -476,18 +476,17 @@
   --settings-border-soft: hsl(0 0% 100% / 0.08);
   --settings-border-strong: hsl(0 0% 100% / 0.2);
   --settings-border-overlay: hsl(0 0% 100% / 0.45);
-  --settings-accent-shadow: hsl(190 100% 50% / 0.1);
-  --settings-primary-border: hsl(190 100% 50% / 0.26);
-  --settings-primary-gradient:
-    linear-gradient(135deg, hsl(190 100% 50% / 0.96), hsl(191 100% 40% / 0.96));
-  --settings-primary-text: hsl(205 71% 6%);
-  --settings-primary-shadow: hsl(190 100% 50% / 0.2);
-  --settings-primary-shadow-hover: hsl(190 100% 50% / 0.22);
+  --settings-accent-shadow: hsl(var(--primary) / 0.12);
+  --settings-primary-border: hsl(var(--primary));
+  --settings-primary-gradient: hsl(var(--primary));
+  --settings-primary-text: hsl(var(--primary-foreground));
+  --settings-primary-shadow: hsl(0 0% 0% / 0.24);
+  --settings-primary-shadow-hover: hsl(0 0% 0% / 0.32);
   --settings-secondary-border: hsl(0 0% 100% / 0.08);
   --settings-secondary-bg: hsl(0 0% 100% / 0.03);
-  --settings-secondary-border-hover: hsl(190 100% 50% / 0.3);
-  --settings-secondary-bg-hover: hsl(190 100% 50% / 0.06);
-  --settings-glow-hover: hsl(190 100% 50% / 0.38);
+  --settings-secondary-border-hover: hsl(var(--primary) / 0.34);
+  --settings-secondary-bg-hover: hsl(var(--primary) / 0.08);
+  --settings-glow-hover: hsl(var(--primary) / 0.2);
   --settings-skeleton-strong: hsl(0 0% 100% / 0.1);
   --settings-skeleton-soft: hsl(0 0% 100% / 0.06);
   --input-surface-bg: var(--bg-card);
@@ -496,8 +495,7 @@
   --input-surface-border-focus: hsl(var(--primary) / 0.45);
   --input-surface-focus-ring: 0 0 0 4px hsl(var(--primary) / 0.18);
   --settings-input-rest-border: hsl(var(--border) / 0.58);
-  --gradient-primary:
-    linear-gradient(135deg, rgba(0, 212, 255, 0.96), rgba(0, 168, 204, 0.96));
+  --gradient-primary: hsl(var(--primary));
 
   /* Chat UI Tokens (Dark) */
   --chat-avatar-user-bg: hsl(var(--primary) / 0.8);
@@ -787,9 +785,9 @@
 }
 
 .badge-cyan {
-  background: rgba(0, 212, 255, 0.15);
-  color: var(--color-cyan);
-  border: 1px solid rgba(0, 212, 255, 0.3);
+  background: hsl(var(--primary) / 0.12);
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--primary) / 0.28);
 }
 
 .badge-purple {
@@ -1989,20 +1987,15 @@ textarea {
 }
 
 .btn-primary {
-  border: 1px solid rgba(0, 212, 255, 0.26);
-  background: linear-gradient(
-    135deg,
-    rgba(0, 212, 255, 0.96),
-    rgba(0, 168, 204, 0.96)
-  );
-  color: #041118;
-  box-shadow: 0 12px 28px rgba(0, 212, 255, 0.2);
+  border: 1px solid hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: 0 8px 20px hsl(0 0% 0% / 0.12);
 }
 
 .btn-primary:hover {
-  transform: translateY(-1px);
   filter: brightness(1.04);
-  box-shadow: 0 18px 34px rgba(0, 212, 255, 0.22);
+  box-shadow: 0 10px 22px hsl(0 0% 0% / 0.16);
 }
 
 .btn-secondary {
@@ -2048,7 +2041,7 @@ textarea {
 :root:not(.dark) .portfolio-page .btn-primary:hover:not(:disabled) {
   box-shadow:
     inset 0 1px 0 hsl(0 0% 100% / 0.18),
-    0 18px 34px rgba(0, 212, 255, 0.22);
+    0 10px 22px hsl(0 0% 0% / 0.12);
 }
 
 .bg-hover {

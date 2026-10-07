@@ -1514,6 +1514,19 @@ const HomePage: React.FC = () => {
     ],
   );
 
+  const isFreshWorkspace = !isLoadingStockBar
+    && mergedStockBarItems.length === 0
+    && watchlistRows.length === 0
+    && !selectedReport
+    && !marketReviewReport
+    && !isLoadingReport;
+
+  const exampleTickers = [
+    { code: '600519', label: '600519' },
+    { code: 'hk00700', label: '00700' },
+    { code: 'AAPL', label: 'AAPL' },
+  ];
+
   return (
     <div
       data-testid="home-dashboard"
@@ -1704,9 +1717,11 @@ const HomePage: React.FC = () => {
         ) : null}
 
         <div className="flex-1 flex min-h-0 overflow-hidden">
-          <div className="hidden min-h-0 w-64 shrink-0 flex-col overflow-hidden pl-4 pb-4 md:flex lg:w-72">
-            {sidebarContent}
-          </div>
+          {!isFreshWorkspace ? (
+            <div className="hidden min-h-0 w-64 shrink-0 flex-col overflow-hidden pl-4 pb-4 md:flex lg:w-72">
+              {sidebarContent}
+            </div>
+          ) : null}
 
           {sidebarOpen ? (
             <div className="fixed inset-0 z-40 md:hidden" onClick={() => setSidebarOpen(false)}>
@@ -1871,11 +1886,29 @@ const HomePage: React.FC = () => {
                 <EmptyState
                   title={t('home.startAnalysisTitle')}
                   description={t('home.startAnalysisDescription')}
-                  className="max-w-xl border-dashed"
+                  className="max-w-lg border-dashed"
                   icon={(
                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
+                  )}
+                  action={(
+                    <div className="space-y-3">
+                      <p className="text-xs text-secondary-text">{t('home.exampleLabel')}</p>
+                      <div className="flex flex-wrap justify-center gap-2">
+                        {exampleTickers.map((ticker) => (
+                          <button
+                            key={ticker.code}
+                            type="button"
+                            className="rounded-md border border-border/70 bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-hover"
+                            onClick={() => setQuery(ticker.code)}
+                          >
+                            {ticker.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-text">{t('home.emptyHint')}</p>
+                    </div>
                   )}
                 />
               </div>

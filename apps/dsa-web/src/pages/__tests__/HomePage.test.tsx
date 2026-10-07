@@ -345,8 +345,10 @@ describe('HomePage', () => {
 
     expect(await screen.findByText('开始分析')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '开始分析', level: 3 })).toBeInTheDocument();
-    expect(screen.getByText('输入股票代码进行分析，或从左侧选择历史报告查看。')).toBeInTheDocument();
-    expect(screen.getByText('暂无个股记录')).toBeInTheDocument();
+    expect(screen.getByText('在上方输入股票代码或名称，查看技术面、新闻和 AI 分析。')).toBeInTheDocument();
+    expect(screen.getByText('试试这些代码')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '600519' })).toBeInTheDocument();
+    expect(screen.queryByText('暂无个股记录')).not.toBeInTheDocument();
   });
 
   it('opens the run-flow drawer from an active task in TaskPanel', async () => {
