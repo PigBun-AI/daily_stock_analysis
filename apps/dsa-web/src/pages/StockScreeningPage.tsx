@@ -41,6 +41,7 @@ import {
 } from '../api/screening';
 import { formatParsedApiError, getParsedApiError, toApiErrorMessage, type ParsedApiError } from '../api/error';
 import { AppPage, Button, InlineAlert, Select } from '../components/common';
+import { useUiLanguage } from '../contexts/UiLanguageContext';
 
 const MARKETS = [{ id: 'cn', label: 'A 股' }];
 const SCREEN_TASK_STORAGE_KEY = 'dsa.screening.activeScreenTask.v1';
@@ -840,6 +841,11 @@ const MiniSparkline: React.FC<{ score?: number | null; selected?: boolean }> = (
 
 const StockScreeningPage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useUiLanguage();
+
+  useEffect(() => {
+    document.title = `${t('layout.route.screening.title')} - DSA`;
+  }, [t]);
   const [restoredTask] = useState<PersistedScreenTask | null>(() => readPersistedScreenTask());
   const [statusState, setStatusState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [statusError, setStatusError] = useState('');

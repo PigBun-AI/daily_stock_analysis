@@ -101,6 +101,10 @@ const ModelUsageCard: React.FC<{ model: UsageModelBreakdown; language: UiLanguag
 
 const TokenUsagePage: React.FC = () => {
   const { language, t } = useUiLanguage();
+
+  useEffect(() => {
+    document.title = `${t('usage.title')} - DSA`;
+  }, [t]);
   const [period, setPeriod] = useState<UsagePeriod>('month');
   const [dashboard, setDashboard] = useState<UsageDashboard | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
