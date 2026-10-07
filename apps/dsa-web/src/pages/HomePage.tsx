@@ -1105,10 +1105,6 @@ const HomePage: React.FC = () => {
 
   const todayDateKey = getTodayInShanghai();
   useEffect(() => {
-    if (sidebarWorkspaceTab !== 'today') {
-      return undefined;
-    }
-
     let active = true;
     setIsLoadingTodayAnalysisItems(true);
     setTodayAnalysisLoadFailed(false);
@@ -1134,7 +1130,7 @@ const HomePage: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [sidebarWorkspaceTab, todayAnalysisRefreshVersion, todayDateKey]);
+  }, [todayAnalysisRefreshVersion, todayDateKey]);
 
   const activeTaskByCode = useMemo(() => {
     const tasksByCode = new Map<string, TaskInfo>();
@@ -1514,9 +1510,10 @@ const HomePage: React.FC = () => {
     ],
   );
 
-  const isFreshWorkspace = !isLoadingStockBar
-    && mergedStockBarItems.length === 0
+  const isFreshWorkspace = mergedStockBarItems.length === 0
+    && todayAnalysisItems.length === 0
     && watchlistRows.length === 0
+    && activeTasks.length === 0
     && !selectedReport
     && !marketReviewReport
     && !isLoadingReport;
@@ -1892,7 +1889,7 @@ const HomePage: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                   )}
-                  action={(
+                  action={isFreshWorkspace ? (
                     <div className="space-y-3">
                       <p className="text-xs text-secondary-text">{t('home.exampleLabel')}</p>
                       <div className="flex flex-wrap justify-center gap-2">
@@ -1909,7 +1906,7 @@ const HomePage: React.FC = () => {
                       </div>
                       <p className="text-xs text-muted-text">{t('home.emptyHint')}</p>
                     </div>
-                  )}
+                  ) : undefined}
                 />
               </div>
             ) : null}
