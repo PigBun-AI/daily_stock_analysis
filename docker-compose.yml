@@ -1,9 +1,12 @@
 # Full stack: web UI + API on host port 18473 only.
 # Postgres is internal (hostname `db`) and is not published.
 #
-#   cp .env.example .env
 #   docker compose up -d --build
 #   open http://localhost:18473
+#
+# SQLite fallback when Docker bridge ICC cannot route web → db:
+#   docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d --build
+# or: DATABASE_URL= docker compose up -d --no-deps --build web
 
 name: daily-stock-analysis
 
@@ -40,8 +43,9 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       SECRET_KEY: ${SECRET_KEY:-please-change-this-compose-secret}
       AUTH_REGISTRATION_ENABLED: ${AUTH_REGISTRATION_ENABLED:-true}
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dsa}:${POSTGRES_PASSWORD:-dsa_internal}@db:5432/${POSTGRES_DB:-dsa}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://dsa:dsa_internal@db:5432/dsa}
       DATABASE_PATH: /app/data/stock_analysis.db
+      API_STARTUP_TIMEOUT_SECONDS: ${API_STARTUP_TIMEOUT_SECONDS:-180}
     volumes:
       - app_data:/app/data
       - app_logs:/app/logs

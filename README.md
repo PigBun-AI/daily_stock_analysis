@@ -197,6 +197,7 @@ docker compose up -d --build
 
 - Web UI：瑞士国际主义平面（纸色底、近黑字、Helvetica/Inter、瑞士红点缀）
 - 认证：bcrypt 哈希密码 + httpOnly 会话 Cookie；自选 / 历史 / 预警 / 组合按用户隔离
+- 容器间网络不通时可用 SQLite 回退：`docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d --build`（用户库落在 `/app/data`）
 
 ## 📱 推送效果
 

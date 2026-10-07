@@ -174,7 +174,7 @@ def _session_user(request: Request | None) -> CurrentUser | None:
         return bound
     if request is None:
         return None
-    state_user = getattr(request.state, "user", None)
+    state_user = getattr(getattr(request, "state", None), "user", None)
     if state_user is not None:
         return state_user
     cookie_val = request.cookies.get(COOKIE_NAME)
@@ -583,7 +583,7 @@ async def auth_login(request: Request, body: LoginRequest):
     summary="Change password",
     description="Change password. Requires valid session.",
 )
-async def auth_change_password(body: ChangePasswordRequest, request: Request | None = None):
+async def auth_change_password(body: ChangePasswordRequest, request: Request):
     """Change password. Requires login."""
     if not is_password_changeable():
         return JSONResponse(

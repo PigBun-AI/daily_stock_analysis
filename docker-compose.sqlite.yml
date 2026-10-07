@@ -1,0 +1,25 @@
+# SQLite fallback overlay (explicit sqlite profile).
+# Use when Docker bridge ICC cannot route web → Postgres, but host →
+# container still works. Does not publish extra host ports.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d --build
+#
+# Equivalent without the overlay:
+#   DATABASE_URL= docker compose up -d --no-deps --build web
+#
+# Users persist under the `app_data` volume (`/app/data`).
+# This overlay tags `db` with the `postgres` profile so default `up` of
+# the overlay stack does not start it. The main compose file still
+# starts Postgres unless this overlay is applied.
+
+services:
+  db:
+    profiles:
+      - postgres
+
+  web:
+    environment:
+      DATABASE_URL: ""
+      DATABASE_PATH: /app/data/stock_analysis.db
+      API_STARTUP_TIMEOUT_SECONDS: ${API_STARTUP_TIMEOUT_SECONDS:-180}
+    depends_on: !override []

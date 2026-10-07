@@ -20,6 +20,7 @@
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 引导管理员 |
 | `AUTH_REGISTRATION_ENABLED` | 是否允许公开注册，默认 true |
 | `DATABASE_URL` | 用户库。Compose 内为 `postgresql+psycopg2://dsa:...@db:5432/dsa`；未设置时使用 `DATABASE_PATH` 对应的 SQLite |
+| `API_STARTUP_TIMEOUT_SECONDS` | FastAPI 启动探测超时，默认 `180`。容器冷启动慢时不要改回 3 秒 |
 
 ## Docker
 
@@ -30,3 +31,16 @@ docker compose up -d --build
 ```
 
 浏览器访问 `http://localhost:18473`。仅该端口映射到宿主机。Postgres 使用内部主机名 `db`，不对外暴露。
+
+`ADMIN_AUTH_ENABLED` 优先读配置文件；镜像内没有 `.env` 时回退到进程 / Compose 环境变量。
+
+### SQLite 回退（容器间网络不通）
+
+默认保持 Postgres。若 Docker bridge ICC 异常（web 访问 `db` 超时，但宿主机访问容器正常），不要从主 compose 删除 `db` 服务，改用 SQLite overlay：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d --build
+# 或：DATABASE_URL= docker compose up -d --no-deps --build web
+```
+
+用户库写入 `app_data` volume（`/app/data`）。主 compose 仍保留 `db` 服务定义。

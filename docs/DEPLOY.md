@@ -15,7 +15,7 @@
 
 ---
 
-本 fork 的根目录 `docker-compose.yml` 只向宿主机发布 **18473**，Postgres 用户库走内部主机名 `db`。详见 [多用户认证](multi-user-auth.md) 与根 README。
+本 fork 的根目录 `docker-compose.yml` 只向宿主机发布 **18473**，Postgres 用户库走内部主机名 `db`。容器间网络不通时可用 `docker-compose.sqlite.yml` 回退到 `/app/data` SQLite，不要从主文件删除 `db`。详见 [多用户认证](multi-user-auth.md) 与根 README。
 
 ## 🐳 方案一：Docker Compose 部署（推荐）
 

@@ -66,16 +66,26 @@ def _get_credential_path() -> Path:
     return _get_data_dir() / ".admin_password_hash"
 
 
+def _parse_auth_enabled_flag(value: object) -> bool:
+    return str(value or "").strip().lower() in ("true", "1", "yes")
+
+
 def _is_auth_enabled_from_env() -> bool:
-    """Read ADMIN_AUTH_ENABLED from .env file."""
+    """Read ADMIN_AUTH_ENABLED from .env when present, else process/Compose env.
+
+    Compose images do not bake a `.env` file. The process environment (for
+    example ``ADMIN_AUTH_ENABLED=true`` in docker-compose.yml) must still win
+    in that case. When a config file exists and defines the key, the file
+    remains the persisted source of truth for the settings toggle.
+    """
     _ensure_env_loaded()
     env_file = os.getenv("ENV_FILE")
     env_path = Path(env_file) if env_file else Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return False
-    values = dotenv_values(env_path)
-    val = (values.get("ADMIN_AUTH_ENABLED") or "").strip().lower()
-    return val in ("true", "1", "yes")
+    if env_path.exists():
+        values = dotenv_values(env_path)
+        if "ADMIN_AUTH_ENABLED" in values:
+            return _parse_auth_enabled_flag(values.get("ADMIN_AUTH_ENABLED"))
+    return _parse_auth_enabled_flag(os.getenv("ADMIN_AUTH_ENABLED"))
 
 
 def rotate_session_secret() -> bool:

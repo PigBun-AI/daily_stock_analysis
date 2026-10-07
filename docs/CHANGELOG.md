@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [修复] FastAPI `/change-password` 使用必填 `Request`，避免 0.142 拒绝 Optional Request 导致容器起不来。
+- [修复] 镜像未烘焙 `.env` 时 `ADMIN_AUTH_ENABLED` 回退读取进程 / Compose 环境变量。
+- [修复] API 启动探测超时改为 `API_STARTUP_TIMEOUT_SECONDS`（默认 180 秒），避免慢主机 3 秒探针重启循环。
+- [文档] Compose 增加 SQLite 回退 overlay（容器间网络不通时）；默认仍是内部 Postgres。
 - [新功能] 多用户注册 / 登录 / 登出：httpOnly 会话 Cookie、bcrypt 密码哈希、ADMIN_USERNAME/ADMIN_PASSWORD 首次引导管理员；自选、分析历史、预警与组合按用户隔离。
 - [改进] Web UI 改为瑞士国际主义平面风格（纸色底、近黑字、Helvetica/Inter、瑞士红点缀），覆盖 Home / Ask / Screening / Portfolio / Settings / Login / Register。
 - [改进] 根目录 Docker Compose 仅向宿主机发布 18473；Postgres 用户库走内部主机名 `db`，不对外暴露端口。

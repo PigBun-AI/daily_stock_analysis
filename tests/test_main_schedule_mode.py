@@ -310,6 +310,17 @@ class MainScheduleModeTestCase(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(observed_bind, [("0.0.0.0", 8000)])
 
+    def test_api_startup_timeout_seconds_defaults_and_parses(self) -> None:
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("API_STARTUP_TIMEOUT_SECONDS", None)
+            self.assertEqual(main.api_startup_timeout_seconds(), 180.0)
+        with patch.dict(os.environ, {"API_STARTUP_TIMEOUT_SECONDS": "12.5"}):
+            self.assertEqual(main.api_startup_timeout_seconds(), 12.5)
+        self.assertEqual(main.api_startup_timeout_seconds("90"), 90.0)
+        self.assertEqual(main.api_startup_timeout_seconds("nope"), 180.0)
+        self.assertEqual(main.api_startup_timeout_seconds("0"), 180.0)
+        self.assertEqual(main.api_startup_timeout_seconds("-1"), 180.0)
+
     def test_start_api_server_fails_before_thread_when_port_is_busy(self) -> None:
         config = self._make_config(log_level="INFO")
 
