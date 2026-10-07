@@ -23,6 +23,7 @@ import type {
   AlertType,
 } from '../types/alerts';
 import { formatDateTime } from '../utils/format';
+import { useUiLanguage } from '../contexts/UiLanguageContext';
 
 const PAGE_SIZE = 20;
 
@@ -99,9 +100,11 @@ function formatNotificationStatus(notification: AlertNotificationItem): string {
 }
 
 const AlertsPage: React.FC = () => {
+  const { t } = useUiLanguage();
+
   useEffect(() => {
-    document.title = '告警中心 - DSA';
-  }, []);
+    document.title = t('alerts.pageTitle');
+  }, [t]);
 
   const [rules, setRules] = useState<AlertRuleItem[]>([]);
   const [rulesTotal, setRulesTotal] = useState(0);
@@ -264,9 +267,9 @@ const AlertsPage: React.FC = () => {
   return (
     <AppPage className="space-y-5">
       <PageHeader
-        eyebrow="Alert Center"
-        title="告警中心"
-        description="管理事件告警、日线技术指标、自选股、持仓/账户联动和大盘红绿灯规则，执行一次性测试，并查看后台评估任务记录的触发历史。"
+        eyebrow={t('alerts.eyebrow')}
+        title={t('alerts.title')}
+        description={t('alerts.description')}
       />
 
       {createError ? <ApiErrorAlert error={createError} onDismiss={() => setCreateError(null)} /> : null}
@@ -343,7 +346,7 @@ const AlertsPage: React.FC = () => {
         {!notificationsLoading && notifications.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
-              <thead className="border-b border-border/60 text-xs uppercase text-muted-text">
+              <thead className="border-b border-border/60 text-xs font-medium text-muted-text">
                 <tr>
                   <th className="px-3 py-2 font-medium">渠道</th>
                   <th className="px-3 py-2 font-medium">状态</th>

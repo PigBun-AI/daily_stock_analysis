@@ -12,11 +12,11 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const BUTTON_SIZE_STYLES = {
-  xsm: 'h-6 rounded-none px-2 text-sm',
-  sm: 'h-9 rounded-none px-3 text-sm',
-  md: 'h-10 rounded-none px-4 text-sm',
-  lg: 'h-11 rounded-none px-5 text-sm',
-  xl: 'h-12 rounded-none px-6 text-sm',
+  xsm: 'h-6 rounded-md px-2 text-sm',
+  sm: 'h-9 rounded-md px-3 text-sm',
+  md: 'h-10 rounded-md px-4 text-sm',
+  lg: 'h-11 rounded-md px-5 text-sm',
+  xl: 'h-12 rounded-md px-6 text-sm',
 } as const;
 
 const ACTION_AI_STYLES = 'bg-[var(--home-action-ai-bg)] border border-[var(--home-action-ai-border)] text-[var(--home-action-ai-text)] hover:bg-[var(--home-action-ai-hover-bg)]';
@@ -39,7 +39,7 @@ const BUTTON_VARIANT_STYLES = {
 } as const;
 
 /**
- * Button component with multiple variants and terminal-inspired styling.
+ * Button component with shared product variants.
  */
 export const Button: React.FC<ButtonProps> = ({
   children,

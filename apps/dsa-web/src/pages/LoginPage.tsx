@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Input } from '../components/common';
-import { UiLanguageToggle } from '../components/i18n/UiLanguageToggle';
 import type { ParsedApiError } from '../api/error';
 import { isParsedApiError } from '../api/error';
 import { useAuth } from '../hooks';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
+import { AuthShell } from '../components/layout/AuthShell';
 import { SettingsAlert } from '../components/settings';
 import { resolveLoginRedirect } from '../utils/loginRedirect';
 
@@ -55,123 +55,88 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-[var(--login-bg-main)] text-[var(--login-text-primary)]">
-      <header className="flex items-center justify-between border-b border-[var(--login-border-card)] px-6 py-4 sm:px-10">
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-[var(--login-text-muted)]">
-          {t('login.kicker')}
-        </p>
-        <UiLanguageToggle />
-      </header>
+    <AuthShell
+      title={isFirstTime ? t('login.setupTitle') : t('login.adminLogin')}
+      description={isFirstTime ? t('login.setupDescription') : t('login.loginDescription')}
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {!isFirstTime && (
+          <Input
+            id="username"
+            type="text"
+            appearance="login"
+            label={t('login.username')}
+            placeholder={t('login.usernamePlaceholder')}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            disabled={isSubmitting}
+            autoFocus
+            autoComplete="username"
+          />
+        )}
 
-      <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 gap-0 px-6 py-16 sm:px-10 lg:grid-cols-12 lg:gap-16 lg:py-24">
-        <section className="lg:col-span-6">
-          <p className="text-[11px] font-medium uppercase tracking-[0.32em] text-[var(--login-accent-text)]">
-            01 / {t('login.sectionIndex')}
-          </p>
-          <h1 className="mt-6 max-w-xl text-5xl font-semibold leading-[0.95] tracking-tight sm:text-7xl">
-            {t('login.brandTitle')}
-          </h1>
-          <p className="mt-8 max-w-md text-sm leading-relaxed text-[var(--login-text-secondary)]">
-            {isFirstTime ? t('login.setupDescription') : t('login.loginDescription')}
-          </p>
-        </section>
+        <Input
+          id="password"
+          type="password"
+          appearance="login"
+          allowTogglePassword
+          label={isFirstTime ? t('login.adminPassword') : t('login.loginPassword')}
+          placeholder={t('login.loginPasswordPlaceholder')}
+          hint={t('login.passwordHint')}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={isSubmitting}
+          autoFocus={isFirstTime}
+          autoComplete={isFirstTime ? 'new-password' : 'current-password'}
+        />
 
-        <section className="mt-12 border-t border-[var(--login-border-card)] pt-10 lg:col-span-6 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-16 lg:pt-0">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            {isFirstTime ? t('login.setupTitle') : t('login.adminLogin')}
-          </h2>
-          <p className="mt-2 text-sm text-[var(--login-text-secondary)]">
-            {isFirstTime ? t('login.setupHint') : t('login.loginHint')}
-          </p>
+        {isFirstTime && (
+          <Input
+            id="passwordConfirm"
+            type="password"
+            appearance="login"
+            allowTogglePassword
+            label={t('login.confirmPassword')}
+            placeholder={t('login.confirmPasswordPlaceholder')}
+            value={passwordConfirm}
+            onChange={(e) => setPasswordConfirm(e.target.value)}
+            disabled={isSubmitting}
+            autoComplete="new-password"
+          />
+        )}
 
-          <form onSubmit={handleSubmit} className="mt-10 space-y-6">
-            {!isFirstTime && (
-              <Input
-                id="username"
-                type="text"
-                appearance="login"
-                label={t('login.username')}
-                placeholder={t('login.usernamePlaceholder')}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={isSubmitting}
-                autoFocus
-                autoComplete="username"
-              />
-            )}
+        {error && (
+          <SettingsAlert
+            title={isFirstTime ? t('login.setupFailed') : t('login.validationFailed')}
+            message={isParsedApiError(error) ? error.message : error}
+            variant="error"
+          />
+        )}
 
-            <Input
-              id="password"
-              type="password"
-              appearance="login"
-              allowTogglePassword
-              iconType="password"
-              label={isFirstTime ? t('login.adminPassword') : t('login.loginPassword')}
-              placeholder={isFirstTime ? t('login.setupPasswordPlaceholder') : t('login.loginPasswordPlaceholder')}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={isSubmitting}
-              autoFocus={isFirstTime}
-              autoComplete={isFirstTime ? 'new-password' : 'current-password'}
-            />
-
-            {isFirstTime && (
-              <Input
-                id="passwordConfirm"
-                type="password"
-                appearance="login"
-                allowTogglePassword
-                iconType="password"
-                label={t('login.confirmPassword')}
-                placeholder={t('login.confirmPasswordPlaceholder')}
-                value={passwordConfirm}
-                onChange={(e) => setPasswordConfirm(e.target.value)}
-                disabled={isSubmitting}
-                autoComplete="new-password"
-              />
-            )}
-
-            {error && (
-              <SettingsAlert
-                title={isFirstTime ? t('login.setupFailed') : t('login.validationFailed')}
-                message={isParsedApiError(error) ? error.message : error}
-                variant="error"
-                className="!border-[var(--login-error-border)] !bg-[var(--login-error-bg)] !text-[var(--login-error-text)]"
-              />
-            )}
-
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              className="h-12 w-full rounded-none border-0 bg-[var(--login-brand-button-start)] font-medium tracking-wide text-[var(--login-button-text)] hover:bg-[var(--login-brand-button-start-hover)]"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{isFirstTime ? t('login.setupSubmitting') : t('login.loginSubmitting')}</span>
-                </>
-              ) : (
-                <span>{isFirstTime ? t('login.setupSubmit') : t('login.loginSubmit')}</span>
-              )}
-            </Button>
-          </form>
-
-          {!isFirstTime && registrationEnabled !== false && (
-            <p className="mt-8 border-t border-[var(--login-border-card)] pt-6 text-sm text-[var(--login-text-secondary)]">
-              {t('login.noAccount')}{' '}
-              <Link
-                to={`/register?redirect=${encodeURIComponent(redirect)}`}
-                className="font-medium text-[var(--login-accent-text)] underline-offset-4 hover:underline"
-              >
-                {t('login.goRegister')}
-              </Link>
-            </p>
+        <Button type="submit" variant="primary" size="lg" className="h-11 w-full" disabled={isSubmitting}>
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{isFirstTime ? t('login.setupSubmitting') : t('login.loginSubmitting')}</span>
+            </>
+          ) : (
+            <span>{isFirstTime ? t('login.setupSubmit') : t('login.loginSubmit')}</span>
           )}
-        </section>
-      </main>
-    </div>
+        </Button>
+      </form>
+
+      {!isFirstTime && registrationEnabled !== false && (
+        <p className="mt-6 text-sm text-secondary-text">
+          {t('login.noAccount')}{' '}
+          <Link
+            to={`/register?redirect=${encodeURIComponent(redirect)}`}
+            className="text-primary underline underline-offset-4 hover:opacity-80"
+          >
+            {t('login.goRegister')}
+          </Link>
+        </p>
+      )}
+    </AuthShell>
   );
 };
 

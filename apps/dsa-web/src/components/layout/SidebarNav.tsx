@@ -47,7 +47,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
   const isRail = variant === 'rail';
   const { authEnabled, logout, username } = useAuth();
   const itemBaseClass = cn(
-    'group relative flex h-[var(--nav-item-height)] w-full items-center overflow-hidden rounded-none border-b border-transparent text-[13px] uppercase tracking-[0.14em] leading-none text-secondary-text transition-all',
+    'group relative flex h-[var(--nav-item-height)] w-full items-center overflow-hidden rounded-md border border-transparent text-sm leading-none text-secondary-text transition-colors',
     isRail
       ? 'justify-center gap-2.5 px-2'
       : collapsed
@@ -73,7 +73,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
       >
         <div
           className={cn(
-            'flex items-center justify-center bg-primary text-primary-foreground',
+            'flex items-center justify-center rounded-md bg-primary text-primary-foreground',
             isRail ? 'h-9 w-9' : 'h-10 w-10'
           )}
         >
@@ -83,7 +83,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
           <div className="min-w-0">
             <p className={cn('truncate font-semibold tracking-tight text-foreground', isRail ? 'text-[0.95rem] leading-none' : 'text-sm')}>DSA</p>
             {username ? (
-              <p className="mt-1 truncate text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{username}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{username}</p>
             ) : null}
           </div>
         ) : null}

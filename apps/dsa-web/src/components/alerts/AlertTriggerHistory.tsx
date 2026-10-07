@@ -61,7 +61,7 @@ export const AlertTriggerHistory: React.FC<AlertTriggerHistoryProps> = ({ trigge
       {!isLoading && triggers.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="border-b border-border/60 text-xs uppercase text-muted-text">
+            <thead className="border-b border-border/60 text-xs font-medium text-muted-text">
               <tr>
                 <th className="px-3 py-2 font-medium">状态</th>
                 <th className="px-3 py-2 font-medium">阶段 / 质量</th>

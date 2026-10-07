@@ -28,7 +28,7 @@ async function login(page: Page) {
   await page.locator('#password').fill(smokePassword!);
 
   // Wait for and click the submit button
-  const submitButton = page.getByRole('button', { name: /授权进入工作台|完成设置并登录/ });
+  const submitButton = page.getByRole('button', { name: /登录|设置并登录/ });
   await expect(submitButton).toBeVisible();
 
   await Promise.all([

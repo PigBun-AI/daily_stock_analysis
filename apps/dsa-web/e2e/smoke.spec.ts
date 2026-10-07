@@ -25,8 +25,9 @@ async function login(page: Page) {
   await page.goto('/login');
   await page.waitForLoadState('domcontentloaded');
 
+  const usernameInput = page.locator('#username');
   const passwordInput = page.locator('#password');
-  const submitButton = page.getByRole('button', { name: /授权进入工作台|完成设置并登录/ });
+  const submitButton = page.getByRole('button', { name: /登录|设置并登录/ });
   const homeLink = page.getByRole('link', { name: '首页' });
 
   const isAlreadyAuthenticated =
@@ -39,6 +40,9 @@ async function login(page: Page) {
   }
 
   await expect(passwordInput).toBeVisible({ timeout: 10_000 });
+  if (await usernameInput.isVisible().catch(() => false)) {
+    await usernameInput.fill(process.env.DSA_WEB_SMOKE_USERNAME || 'admin');
+  }
   await passwordInput.fill(smokePassword!);
   await expect(submitButton).toBeVisible();
 
@@ -62,15 +66,9 @@ test.describe('web smoke', () => {
     await page.goto('/login');
     await page.waitForLoadState('domcontentloaded');
 
-    // Check for branding
-    await expect(page.getByText('DAILY STOCK').first()).toBeVisible();
-    await expect(page.getByText('Analysis Engine')).toBeVisible();
-
-    // Check for password input
+    await expect(page.getByRole('heading', { name: /登录|设置初始密码/ })).toBeVisible();
     await expect(page.locator('#password')).toBeVisible();
-
-    // Check for submit button
-    await expect(page.getByRole('button', { name: /授权进入工作台|完成设置并登录/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /登录|设置并登录/ })).toBeVisible();
 
     await captureSmokeScreenshot(page, testInfo, 'smoke-login-page-zh');
   });

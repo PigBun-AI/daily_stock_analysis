@@ -45,28 +45,8 @@ export function persistUiLanguage(storage: Storage | null, language: UiLanguage)
   }
 }
 
-function getBrowserUiLanguage(navigatorLike?: Pick<Navigator, 'language' | 'languages'> | null): UiLanguage {
-  const languageCandidates = [
-    ...(Array.isArray(navigatorLike?.languages) ? navigatorLike?.languages ?? [] : []),
-    navigatorLike?.language,
-  ].filter((language): language is string => Boolean(language));
-
-  for (const candidate of languageCandidates) {
-    const normalized = candidate.toLowerCase();
-    if (normalized.startsWith('zh')) {
-      return 'zh';
-    }
-    if (normalized.startsWith('en')) {
-      return 'en';
-    }
-  }
-
-  return 'zh';
-}
-
 export function resolveInitialUiLanguage({
   storage,
-  navigatorLike,
 }: {
   storage?: Storage | null;
   navigatorLike?: Pick<Navigator, 'language' | 'languages'> | null;
@@ -76,7 +56,7 @@ export function resolveInitialUiLanguage({
     return stored;
   }
 
-  return getBrowserUiLanguage(navigatorLike);
+  return 'zh';
 }
 
 export function getRuntimeInitialLanguage(): UiLanguage {
