@@ -11,7 +11,7 @@ import logging
 import os
 import re
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, List, Optional
 
@@ -50,8 +50,8 @@ class UserRecord(UserBase):
     username = Column(String(64), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(16), nullable=False, default=ROLE_USER, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
 
 
 class UserWatchlistRecord(UserBase):
@@ -62,7 +62,7 @@ class UserWatchlistRecord(UserBase):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, unique=True, index=True)
     stock_codes = Column(Text, nullable=False, default="")
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
 
     __table_args__ = (UniqueConstraint("user_id", name="uix_user_watchlist_user"),)
 
@@ -237,7 +237,7 @@ def change_user_password(user_id: int, current: str, new: str) -> Optional[str]:
         if not verify_password_hash(current, record.password_hash):
             return "当前密码错误"
         record.password_hash = _hash_password(new)
-        record.updated_at = datetime.utcnow()
+        record.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         return None
 
 
@@ -271,7 +271,7 @@ def set_watchlist_codes(user_id: int, codes: List[str]) -> List[str]:
             session.add(UserWatchlistRecord(user_id=user_id, stock_codes=payload))
         else:
             row.stock_codes = payload
-            row.updated_at = datetime.utcnow()
+            row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     return cleaned
 
 

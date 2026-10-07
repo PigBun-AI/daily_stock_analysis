@@ -186,9 +186,9 @@ python main.py --serve-only
 宿主机只发布 **18473**。Postgres 用户库使用内部主机名 `db`，不对外暴露。免费行情源仍可在不配置付费 Key 时工作。
 
 ```bash
-cp .env.example .env
-# 至少设置：ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY
-# 可选 LLM Key 可留空
+# 可直接启动（默认管理员 admin / changeme，仅供本地）
+# 生产请先 cp .env.example .env 并设置 ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY
+# 可选 LLM Key 可留空；免费行情源无需付费 Key
 docker compose up -d --build
 # 浏览器打开 http://localhost:18473 进入登录页
 # 引导管理员：ADMIN_USERNAME / ADMIN_PASSWORD

@@ -24,8 +24,9 @@
 ## Docker
 
 ```bash
-cp .env.example .env
+# 本地可直接启动（默认 admin / changeme）
+# 生产请先 cp .env.example .env 并设置 ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY
 docker compose up -d --build
 ```
 
-浏览器访问 `http://localhost:18473`。仅该端口映射到宿主机。
+浏览器访问 `http://localhost:18473`。仅该端口映射到宿主机。Postgres 使用内部主机名 `db`，不对外暴露。

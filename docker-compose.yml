@@ -32,8 +32,6 @@ services:
     command: ["python", "main.py", "--serve-only", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${HOST_PORT:-18473}:8000"
-    env_file:
-      - .env
     environment:
       TZ: Asia/Shanghai
       WEBUI_HOST: 0.0.0.0
