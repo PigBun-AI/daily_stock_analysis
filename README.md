@@ -14,6 +14,8 @@
   <img src="https://trendshift.io/api/badge/trendshift/repositories/18527/daily?language=Python" alt="#1 Python Repository Of The Day | Trendshift" width="250" height="55"/>&nbsp;<a href="https://hellogithub.com/repository/ZhuLinsen/daily_stock_analysis" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=6daa16e405ce46ed97b4a57706aeb29f&claim_uid=pfiJMqhR9uvDGlT&theme=neutral" alt="Featured｜HelloGitHub" width="230" /></a>
 </p>
 
+> 本仓库是 [ZhuLinsen/daily_stock_analysis](https://github.com/ZhuLinsen/daily_stock_analysis) 的 MIT 许可 fork，保留上游股票分析能力，并增加瑞士国际主义风格 Web UI 与多用户登录隔离。
+
 > 🤖 基于 AI 大模型的 A股/港股/美股/日股/韩股/台股自选股智能分析系统，每日自动分析并推送「决策仪表盘」到企业微信/飞书/Telegram/Discord/Slack/邮箱
 
 [**产品预览**](#-产品预览) · [**功能特性**](#-功能特性) · [**快速开始**](#-快速开始) · [**推送效果**](#-推送效果) · [**文档中心**](docs/INDEX.md) · [**完整指南**](docs/full-guide.md)
@@ -177,7 +179,24 @@ python main.py --schedule
 python main.py --serve-only
 ```
 
-> Docker 部署、定时任务、云服务器访问请参考 [完整指南](docs/full-guide.md)；桌面客户端打包请参考 [桌面端打包说明](docs/desktop-package.md)。
+> Docker 部署、定时任务、云服务器访问请参考 [完整指南](docs/full-guide.md)；桌面客户端打包请参考 [桌面端打包说明](docs/desktop-package.md)。多用户登录细节见 [多用户认证](docs/multi-user-auth.md)。
+
+### Docker Compose（仅开放 18473）
+
+宿主机只发布 **18473**。Postgres 用户库使用内部主机名 `db`，不对外暴露。免费行情源仍可在不配置付费 Key 时工作。
+
+```bash
+cp .env.example .env
+# 至少设置：ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY
+# 可选 LLM Key 可留空
+docker compose up -d --build
+# 浏览器打开 http://localhost:18473 进入登录页
+# 引导管理员：ADMIN_USERNAME / ADMIN_PASSWORD
+# 其他用户：登录页「注册」
+```
+
+- Web UI：瑞士国际主义平面（纸色底、近黑字、Helvetica/Inter、瑞士红点缀）
+- 认证：bcrypt 哈希密码 + httpOnly 会话 Cookie；自选 / 历史 / 预警 / 组合按用户隔离
 
 ## 📱 推送效果
 

@@ -8,9 +8,10 @@
 :root {
   /* Typography */
   font-family:
-    "Inter",
-    "SF Pro Display",
-    "Segoe UI",
+    "Helvetica Neue",
+    Helvetica,
+    Inter,
+    Arial,
     system-ui,
     -apple-system,
     sans-serif;
@@ -23,26 +24,26 @@
 
   /* HSL tokens used by Tailwind-based components */
 
-  --background: 216 33% 97%;
-  --foreground: 228 35% 12%;
-  --card: 0 0% 100%;
-  --card-foreground: 228 35% 12%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 228 35% 12%;
-  --primary: 193 100% 43%;
-  --primary-foreground: 216 33% 97%;
-  --secondary: 214 32% 91%;
-  --secondary-foreground: 228 35% 16%;
-  --muted: 214 30% 94%;
-  --muted-foreground: 224 12% 42%;
-  --accent: 214 32% 93%;
-  --accent-foreground: 228 35% 16%;
-  --destructive: 349 82% 56%;
-  --destructive-foreground: 210 33% 98%;
-  --border: 217 28% 84%;
-  --input: 217 28% 84%;
-  --ring: 193 100% 43%;
-  --radius: 1rem;
+  --background: 60 14% 95%;
+  --foreground: 0 0% 7%;
+  --card: 60 20% 98%;
+  --card-foreground: 0 0% 7%;
+  --popover: 60 20% 98%;
+  --popover-foreground: 0 0% 7%;
+  --primary: 356 95% 46%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 60 10% 90%;
+  --secondary-foreground: 0 0% 10%;
+  --muted: 60 8% 91%;
+  --muted-foreground: 0 0% 32%;
+  --accent: 60 8% 91%;
+  --accent-foreground: 0 0% 10%;
+  --destructive: 356 95% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 12%;
+  --input: 0 0% 18%;
+  --ring: 356 95% 46%;
+  --radius: 0.125rem;
   --elevated: 0 0% 100%;
   --hover: 214 29% 90%;
   --secondary-text: 224 18% 28%;
@@ -133,7 +134,7 @@
   --nav-brand-shadow: hsl(var(--primary) / 0.2);
 
   /* Shell Sidebar Custom */
-  --shell-sidebar-border: hsl(193 100% 43% / 0.35);
+  --shell-sidebar-border: hsl(0 0% 0% / 0.18);
 
   /* Home page related (using HSL format) */
   --home-loading-ring-track: hsl(var(--primary) / 0.2);
@@ -197,7 +198,7 @@
   --home-rail-bg: linear-gradient(180deg, hsl(0 0% 100% / 0.98), hsl(214 36% 97% / 0.98));
   --home-rail-shadow: 0 14px 30px hsl(220 22% 34% / 0.09), 0 4px 10px hsl(220 18% 28% / 0.05);
   --home-history-glow: hsl(193 100% 43% / 0.14);
-  --autocomplete-hover-bg: #04d1f6;
+  --autocomplete-hover-bg: #E30613;
 
   /* Shadows (using HSL format) */
   --shadow-soft-card: 0 12px 24px hsl(220 20% 34% / 0.09), 0 3px 8px hsl(220 16% 28% / 0.05);
@@ -213,13 +214,12 @@
   --settings-border-soft: hsl(218 22% 84% / 0.94);
   --settings-border-strong: hsl(218 18% 68% / 0.98);
   --settings-border-overlay: hsl(218 22% 72% / 0.92);
-  --settings-accent-shadow: hsl(190 100% 50% / 0.08);
-  --settings-primary-border: hsl(190 100% 50% / 0.26);
-  --settings-primary-gradient:
-    linear-gradient(135deg, hsl(190 100% 50% / 0.96), hsl(191 100% 40% / 0.96));
-  --settings-primary-text: hsl(205 71% 6%);
-  --settings-primary-shadow: hsl(190 100% 50% / 0.2);
-  --settings-primary-shadow-hover: hsl(190 100% 50% / 0.22);
+  --settings-accent-shadow: hsl(356 95% 46% / 0.08);
+  --settings-primary-border: hsl(0 0% 0% / 0.85);
+  --settings-primary-gradient: hsl(356 95% 46%);
+  --settings-primary-text: hsl(0 0% 100%);
+  --settings-primary-shadow: hsl(0 0% 0% / 0.08);
+  --settings-primary-shadow-hover: hsl(0 0% 0% / 0.12);
   --settings-secondary-border: hsl(218 22% 74% / 0.96);
   --settings-secondary-bg: hsl(214 36% 95% / 0.98);
   --settings-secondary-border-hover: hsl(190 100% 50% / 0.38);
@@ -261,32 +261,32 @@
   --backtest-spinner-head: hsl(var(--primary));
   --backtest-table-bg: hsl(var(--card) / 0.72);
 
-  /* Login Page Tokens (Light) */
-  --login-bg-main: hsl(214 34% 96%);
-  --login-bg-card: hsl(210 43% 92% / 0.78);
-  --login-border-card: hsl(221 28% 28% / 0.58);
-  --login-border-input: hsl(201 56% 46% / 0.7);
-  --login-border-focus: hsl(var(--primary) / 0.48);
-  --login-error-text: hsl(var(--destructive));
-  --login-error-bg: hsl(var(--destructive) / 0.1);
-  --login-error-border: hsl(var(--destructive) / 0.2);
-  --login-text-primary: hsl(223 36% 12%);
-  --login-text-secondary: hsl(220 17% 28%);
-  --login-text-muted: hsl(221 18% 32% / 0.72);
-  --login-accent-soft: hsl(var(--primary) / 0.08);
-  --login-accent-border: hsl(220 22% 32% / 0.72);
-  --login-accent-text: hsl(223 36% 18%);
-  --login-accent-glow: hsl(var(--primary) / 0.18);
-  --login-brand-start: hsl(222 36% 16%);
-  --login-brand-end: hsl(205 88% 48%);
-  --login-brand-button-start: hsl(194 78% 56%);
-  --login-brand-button-end: hsl(213 88% 56%);
-  --login-brand-button-start-hover: hsl(194 82% 52%);
-  --login-brand-button-end-hover: hsl(213 90% 52%);
-  --login-button-text: hsl(210 40% 98%);
-  --login-label-text: hsl(223 36% 14%);
-  --login-hint-text: hsl(220 14% 34% / 0.9);
-  --login-input-icon: hsl(205 66% 38% / 0.86);
+  /* Login Page Tokens (Light — Swiss paper) */
+  --login-bg-main: hsl(60 14% 95%);
+  --login-bg-card: hsl(60 20% 98%);
+  --login-border-card: hsl(0 0% 0% / 0.85);
+  --login-border-input: hsl(0 0% 0% / 0.55);
+  --login-border-focus: hsl(356 95% 46%);
+  --login-error-text: hsl(356 95% 38%);
+  --login-error-bg: hsl(356 95% 46% / 0.08);
+  --login-error-border: hsl(356 95% 46% / 0.35);
+  --login-text-primary: hsl(0 0% 7%);
+  --login-text-secondary: hsl(0 0% 24%);
+  --login-text-muted: hsl(0 0% 36%);
+  --login-accent-soft: hsl(356 95% 46% / 0.08);
+  --login-accent-border: hsl(0 0% 0% / 0.85);
+  --login-accent-text: hsl(356 95% 46%);
+  --login-accent-glow: hsl(0 0% 0% / 0);
+  --login-brand-start: hsl(0 0% 7%);
+  --login-brand-end: hsl(356 95% 46%);
+  --login-brand-button-start: hsl(356 95% 46%);
+  --login-brand-button-end: hsl(356 95% 46%);
+  --login-brand-button-start-hover: hsl(356 95% 40%);
+  --login-brand-button-end-hover: hsl(356 95% 40%);
+  --login-button-text: hsl(0 0% 100%);
+  --login-label-text: hsl(0 0% 7%);
+  --login-hint-text: hsl(0 0% 32%);
+  --login-input-icon: hsl(0 0% 28%);
   --login-input-toggle-bg: hsl(210 44% 96% / 0.92);
   --login-input-toggle-border: hsl(208 42% 46% / 0.32);
   --login-input-toggle-text: hsl(220 24% 22% / 0.82);
@@ -302,25 +302,25 @@
 }
 
 .dark {
-  --background: 228 35% 7%;
-  --foreground: 210 33% 98%;
-  --card: 230 24% 10%;
-  --card-foreground: 210 33% 98%;
-  --popover: 230 24% 10%;
-  --popover-foreground: 210 33% 98%;
-  --primary: 190 100% 50%;
-  --primary-foreground: 228 35% 8%;
-  --secondary: 231 19% 15%;
-  --secondary-foreground: 210 33% 94%;
-  --muted: 230 18% 14%;
-  --muted-foreground: 228 13% 66%;
-  --accent: 231 18% 16%;
-  --accent-foreground: 210 33% 98%;
-  --destructive: 349 100% 63%;
-  --destructive-foreground: 210 33% 98%;
-  --border: 226 19% 20%;
-  --input: 226 19% 20%;
-  --ring: 190 100% 50%;
+  --background: 0 0% 7%;
+  --foreground: 60 14% 95%;
+  --card: 0 0% 10%;
+  --card-foreground: 60 14% 95%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 60 14% 95%;
+  --primary: 356 95% 46%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 14%;
+  --secondary-foreground: 60 14% 95%;
+  --muted: 0 0% 14%;
+  --muted-foreground: 0 0% 70%;
+  --accent: 0 0% 14%;
+  --accent-foreground: 60 14% 95%;
+  --destructive: 356 95% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 60 10% 80%;
+  --input: 60 10% 80%;
+  --ring: 356 95% 46%;
   --elevated: 230 22% 12%;
   --hover: 231 20% 16%;
   --secondary-text: 228 16% 72%;
@@ -338,7 +338,7 @@
   --color-danger-alert-text: 349 100% 75%; /* Bright/light pink for dark mode */
   --color-danger-alert-border: 349 100% 63%;
   --color-danger-alert-bg: 349 100% 63%;
-  --autocomplete-hover-bg: #2dcae6;
+  --autocomplete-hover-bg: #E30613;
   /* Tailwind-compatible accent colors (Dark theme) */
   --color-cyan-400: 188 78% 41%;
   --color-emerald-400: 152 69% 40%;
@@ -524,30 +524,30 @@
   --backtest-spinner-head: hsl(var(--primary));
   --backtest-table-bg: hsl(var(--card) / 0.82);
 
-  /* Login Page Tokens (Dark - Preserved Cyber Style) */
-  --login-bg-main: hsl(222 84% 5%);
-  --login-bg-card: hsl(222 34% 8%);
-  --login-border-card: hsl(0 0% 100% / 0.05);
-  --login-border-input: hsl(0 0% 100% / 0.1);
-  --login-border-focus: hsl(var(--primary) / 0.5);
-  --login-error-text: hsl(var(--destructive));
-  --login-error-bg: hsl(var(--destructive) / 0.1);
-  --login-error-border: hsl(var(--destructive) / 0.2);
-  --login-text-primary: hsl(0 0% 100%);
-  --login-text-secondary: hsl(215 20% 65%);
-  --login-text-muted: hsl(215 16% 45%);
-  --login-accent-soft: hsl(var(--primary) / 0.08);
-  --login-accent-border: hsl(var(--primary) / 0.28);
-  --login-accent-text: hsl(var(--primary) / 0.92);
-  --login-accent-glow: hsl(var(--primary) / 0.2);
-  --login-brand-start: hsl(var(--primary));
-  --login-brand-end: hsl(214 100% 62%);
-  --login-brand-button-start: hsl(194 96% 45%);
-  --login-brand-button-end: hsl(214 100% 56%);
-  --login-brand-button-start-hover: hsl(194 96% 50%);
-  --login-brand-button-end-hover: hsl(214 100% 62%);
-  --login-button-text: hsl(210 33% 98%);
-  --login-label-text: hsl(0 0% 100%);
+  /* Login Page Tokens (Dark — Swiss high contrast) */
+  --login-bg-main: hsl(0 0% 7%);
+  --login-bg-card: hsl(0 0% 10%);
+  --login-border-card: hsl(60 14% 95% / 0.7);
+  --login-border-input: hsl(60 14% 95% / 0.45);
+  --login-border-focus: hsl(356 95% 46%);
+  --login-error-text: hsl(356 90% 70%);
+  --login-error-bg: hsl(356 95% 46% / 0.12);
+  --login-error-border: hsl(356 95% 46% / 0.4);
+  --login-text-primary: hsl(60 14% 95%);
+  --login-text-secondary: hsl(60 8% 78%);
+  --login-text-muted: hsl(0 0% 62%);
+  --login-accent-soft: hsl(356 95% 46% / 0.12);
+  --login-accent-border: hsl(60 14% 95% / 0.55);
+  --login-accent-text: hsl(356 95% 60%);
+  --login-accent-glow: hsl(0 0% 0% / 0);
+  --login-brand-start: hsl(60 14% 95%);
+  --login-brand-end: hsl(356 95% 46%);
+  --login-brand-button-start: hsl(356 95% 46%);
+  --login-brand-button-end: hsl(356 95% 46%);
+  --login-brand-button-start-hover: hsl(356 95% 52%);
+  --login-brand-button-end-hover: hsl(356 95% 52%);
+  --login-button-text: hsl(0 0% 100%);
+  --login-label-text: hsl(60 14% 95%);
   --login-hint-text: hsl(215 20% 65%);
   --login-input-icon: hsl(var(--primary) / 0.88);
   --login-input-toggle-bg: hsl(223 28% 14% / 0.92);

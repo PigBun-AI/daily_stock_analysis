@@ -1,0 +1,65 @@
+# Full stack: web UI + API on host port 18473 only.
+# Postgres is internal (hostname `db`) and is not published.
+#
+#   cp .env.example .env
+#   docker compose up -d --build
+#   open http://localhost:18473
+
+name: daily-stock-analysis
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dsa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dsa_internal}
+      POSTGRES_DB: ${POSTGRES_DB:-dsa}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - dsa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dsa} -d ${POSTGRES_DB:-dsa}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["python", "main.py", "--serve-only", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${HOST_PORT:-18473}:8000"
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+      WEBUI_HOST: 0.0.0.0
+      ADMIN_AUTH_ENABLED: "true"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      SECRET_KEY: ${SECRET_KEY:-please-change-this-compose-secret}
+      AUTH_REGISTRATION_ENABLED: ${AUTH_REGISTRATION_ENABLED:-true}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dsa}:${POSTGRES_PASSWORD:-dsa_internal}@db:5432/${POSTGRES_DB:-dsa}
+      DATABASE_PATH: /app/data/stock_analysis.db
+    volumes:
+      - app_data:/app/data
+      - app_logs:/app/logs
+      - app_reports:/app/reports
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dsa
+    restart: unless-stopped
+
+networks:
+  dsa:
+
+volumes:
+  pgdata:
+  app_data:
+  app_logs:
+  app_reports:

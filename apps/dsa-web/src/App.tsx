@@ -22,6 +22,7 @@ const HomePage = lazy(() => import('./pages/HomePage'));
 const BacktestPage = lazy(() => import('./pages/BacktestPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
@@ -69,11 +70,18 @@ const AppContent: React.FC = () => {
         </StandaloneRouteBoundary>
       );
     }
+    if (location.pathname === '/register') {
+      return (
+        <StandaloneRouteBoundary>
+          <RegisterPage />
+        </StandaloneRouteBoundary>
+      );
+    }
     const redirect = encodeURIComponent(location.pathname + location.search + location.hash);
     return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
 
-  if (location.pathname === '/login') {
+  if (location.pathname === '/login' || location.pathname === '/register') {
     // Auth refresh may render this boundary before LoginPage's submit resolves.
     // Both paths must choose the same validated destination.
     const redirect = resolveLoginRedirect(new URLSearchParams(location.search).get('redirect'));

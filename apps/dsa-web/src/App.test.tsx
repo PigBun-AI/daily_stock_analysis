@@ -83,9 +83,13 @@ function makeAuthState(overrides: Partial<AuthState> = {}): AuthState {
     passwordSet: false,
     passwordChangeable: false,
     setupState: 'no_password',
+    username: null,
+    role: null,
+    registrationEnabled: true,
     isLoading: false,
     loadError: null,
     login: vi.fn().mockResolvedValue({ success: true }),
+    register: vi.fn().mockResolvedValue({ success: true }),
     changePassword: vi.fn().mockResolvedValue({ success: true }),
     logout: vi.fn().mockResolvedValue(undefined),
     refreshStatus: vi.fn().mockResolvedValue(undefined),
@@ -107,7 +111,7 @@ describe('App routing behavior', () => {
 
     const { container } = render(<App />);
 
-    expect(container.querySelector('.border-t-cyan')).toBeInTheDocument();
+    expect(container.querySelector('.border-t-primary')).toBeInTheDocument();
   });
 
   it('redirects protected routes to login when auth is enabled but user is not logged in', async () => {

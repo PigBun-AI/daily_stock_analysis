@@ -295,6 +295,13 @@ async def app_lifespan(app: FastAPI):
 
     warmup_akshare_cache()
     try:
+        from src.user_store import bootstrap_admin_from_env, init_user_store
+
+        init_user_store()
+        bootstrap_admin_from_env()
+    except Exception:
+        logger.exception("Failed to initialize multi-user store")
+    try:
         yield
     finally:
         refresh_task = getattr(app.state, "stock_index_refresh_task", None)

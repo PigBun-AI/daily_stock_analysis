@@ -10,10 +10,12 @@ API 依赖注入模块
 3. 提供服务层依赖
 """
 
-from typing import Generator
+from typing import Generator, Optional
 
 from fastapi import Request
 from sqlalchemy.orm import Session
+
+from src.identity import CurrentUser, get_current_user
 
 from src.storage import DatabaseManager
 from src.config import get_config, Config
@@ -76,6 +78,11 @@ def get_system_config_service(request: Request) -> SystemConfigService:
         service = SystemConfigService()
         request.app.state.system_config_service = service
     return service
+
+
+def get_request_user(request: Request) -> Optional[CurrentUser]:
+    """Return the authenticated user bound to this request, if any."""
+    return getattr(request.state, "user", None) or get_current_user()
 
 
 def get_runtime_scheduler_service(request: Request) -> RuntimeSchedulerService:
