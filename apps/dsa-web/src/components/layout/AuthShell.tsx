@@ -20,7 +20,7 @@ export const AuthShell: React.FC<AuthShellProps> = ({ title, description, childr
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-10">
-        <div className="w-full max-w-[400px] rounded-lg border border-border bg-card p-7 shadow-sm">
+        <div className="w-full max-w-[400px] rounded-lg border-2 border-foreground/20 bg-card p-7 shadow-md">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {description ? (
             <p className="mt-2 text-sm leading-6 text-secondary-text">{description}</p>

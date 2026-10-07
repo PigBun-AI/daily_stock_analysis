@@ -40,8 +40,8 @@
   --accent-foreground: 0 0% 10%;
   --destructive: 0 72% 46%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 14% 78%;
-  --input: 220 14% 70%;
+  --border: 220 16% 62%;
+  --input: 220 16% 55%;
   --ring: 221 39% 24%;
   --radius: 0.5rem;
   --elevated: 0 0% 100%;
@@ -233,8 +233,7 @@
   --input-surface-border-focus: hsl(var(--primary) / 0.38);
   --input-surface-focus-ring: 0 0 0 4px hsl(var(--primary) / 0.15);
   --settings-input-rest-border: hsl(218 22% 82% / 0.72);
-  --gradient-primary:
-    linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.74));
+  --gradient-primary: hsl(var(--primary));
 
   /* Chat UI Tokens (Light) */
   --chat-avatar-user-bg: hsl(var(--primary) / 0.5 );

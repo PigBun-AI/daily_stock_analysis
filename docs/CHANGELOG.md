@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 首页无历史时空态改为居中紧凑引导（示例代码 + 简短说明），不再留下高大空白侧栏。
 - [改进] 暗色设置主按钮与青色遗留令牌改走主色，避免旧青绿渐变。
 - [改进] 告警页与选股页主体文案迁入中英 i18n，英文模式不再中英混排。
+- [改进] 登录卡片描边加深，浅色背景上可看见卡片边界。
 - [改进] Web UI 从海报式排版改为常规产品界面：实用中英文案、居中登录/注册卡片、中性主色（涨跌仍用红绿）、默认中文。
 - [修复] FastAPI `/change-password` 使用必填 `Request`，避免 0.142 拒绝 Optional Request 导致容器起不来。
 - [修复] 镜像未烘焙 `.env` 时 `ADMIN_AUTH_ENABLED` 回退读取进程 / Compose 环境变量。
