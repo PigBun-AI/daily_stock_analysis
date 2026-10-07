@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- [改进] 首页无历史时空态改为居中紧凑引导（示例代码 + 简短说明），不再留下高大空白侧栏。
+- [改进] 暗色设置主按钮与青色遗留令牌改走主色，避免旧青绿渐变。
+- [改进] 告警页与选股页主体文案迁入中英 i18n，英文模式不再中英混排。
+- [改进] 登录卡片描边加深，浅色背景上可看见卡片边界。
+- [改进] Web UI 从海报式排版改为常规产品界面：实用中英文案、居中登录/注册卡片、中性主色（涨跌仍用红绿）、默认中文。
+- [修复] FastAPI `/change-password` 使用必填 `Request`，避免 0.142 拒绝 Optional Request 导致容器起不来。
+- [修复] 镜像未烘焙 `.env` 时 `ADMIN_AUTH_ENABLED` 回退读取进程 / Compose 环境变量。
+- [修复] API 启动探测超时改为 `API_STARTUP_TIMEOUT_SECONDS`（默认 180 秒），避免慢主机 3 秒探针重启循环。
+- [文档] Compose 增加 SQLite 回退 overlay（容器间网络不通时）；默认仍是内部 Postgres。
+- [新功能] 多用户注册 / 登录 / 登出：httpOnly 会话 Cookie、bcrypt 密码哈希、ADMIN_USERNAME/ADMIN_PASSWORD 首次引导管理员；自选、分析历史、预警与组合按用户隔离。
+- [改进] Web UI 统一浅色产品界面与多用户登录入口，覆盖 Home / Ask / Screening / Portfolio / Settings / Login / Register。
+- [改进] 根目录 Docker Compose 仅向宿主机发布 18473；Postgres 用户库走内部主机名 `db`，不对外暴露端口。
 - [修复] ETF 轮动按真实 A 股交易日历保留全池缺报价日期及末尾缺口，防止调仓顺延、周末信号提前和动量窗口缩短；历史日历不可用时明确停止计算。
 
 - [修复] ETF 轮动回测在行情缺口后结算完整持仓损益，缺报价日不虚构成交，防守资产缺报价时使用现金；统一参数扫描与主回测的行情处理，限定前复权来源，并跳过无关个股列表校验。

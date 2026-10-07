@@ -46,24 +46,19 @@ describe('UiLanguageContext', () => {
     })).toBe('en');
   });
 
-  it('falls back from invalid storage to the first supported browser language and then zh', () => {
+  it('falls back from invalid or missing storage to zh', () => {
     expect(resolveInitialUiLanguage({
       storage: createStorage('fr'),
       navigatorLike: { language: 'en-US', languages: ['en-US'] },
-    })).toBe('en');
-
-    expect(resolveInitialUiLanguage({
-      storage: createStorage('fr'),
-      navigatorLike: { language: 'zh-CN', languages: ['zh-CN', 'en-US'] },
     })).toBe('zh');
 
     expect(resolveInitialUiLanguage({
       storage: createStorage(null),
-      navigatorLike: { language: 'tr-TR', languages: ['tr-TR'] },
+      navigatorLike: { language: 'en-US', languages: ['en-US'] },
     })).toBe('zh');
   });
 
-  it('falls back to browser language if storage getItem throws', () => {
+  it('falls back to zh if storage getItem throws', () => {
     const throwingStorage = createStorage('en');
     throwingStorage.getItem = () => {
       throw new Error('Storage getItem disabled');
@@ -72,7 +67,7 @@ describe('UiLanguageContext', () => {
     expect(resolveInitialUiLanguage({
       storage: throwingStorage,
       navigatorLike: { language: 'en-US', languages: ['en-US'] },
-    })).toBe('en');
+    })).toBe('zh');
   });
 
   it('persists language preference via storage in a safe, non-throwing path', () => {
@@ -94,7 +89,7 @@ describe('UiLanguageContext', () => {
     });
 
     try {
-      expect(getRuntimeInitialLanguage()).toBe('en');
+      expect(getRuntimeInitialLanguage()).toBe('zh');
     } finally {
       if (originalDescriptor) {
         Object.defineProperty(window, 'localStorage', originalDescriptor);

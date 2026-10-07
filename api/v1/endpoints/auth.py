@@ -30,7 +30,9 @@ from src.auth import (
     verify_password,
     verify_stored_password,
     verify_session,
+    verify_session_info,
 )
+from src.identity import CurrentUser, get_current_user
 from src.config import Config, setup_env
 from src.core.config_manager import ConfigManager
 
@@ -44,8 +46,19 @@ class LoginRequest(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+    username: str = Field(default="", description="Username for multi-user login")
     password: str = Field(default="", description="Admin password")
     password_confirm: str | None = Field(default=None, alias="passwordConfirm", description="Confirm (first-time)")
+
+
+class RegisterRequest(BaseModel):
+    """Public registration for a normal user."""
+
+    model_config = {"populate_by_name": True}
+
+    username: str = Field(default="", description="New username")
+    password: str = Field(default="", description="Password")
+    password_confirm: str | None = Field(default=None, alias="passwordConfirm")
 
 
 class ChangePasswordRequest(BaseModel):
@@ -154,11 +167,40 @@ def _set_session_cookie(response: Response, session_value: str, request: Request
     )
 
 
+def _session_user(request: Request | None) -> CurrentUser | None:
+    """Resolve the current user from middleware state or the session cookie."""
+    bound = get_current_user()
+    if bound is not None:
+        return bound
+    if request is None:
+        return None
+    state_user = getattr(getattr(request, "state", None), "user", None)
+    if state_user is not None:
+        return state_user
+    cookie_val = request.cookies.get(COOKIE_NAME)
+    info = verify_session_info(cookie_val) if cookie_val else None
+    if not info:
+        return None
+    user_id = info.get("user_id")
+    if user_id is None:
+        return CurrentUser(id=0, username="admin", role="admin")
+    try:
+        from src.user_store import get_user_by_id
+
+        record = get_user_by_id(int(user_id))
+    except Exception:
+        record = None
+    if record is None:
+        return None
+    return CurrentUser(id=int(record.id), username=str(record.username), role=str(record.role or "user"))
+
+
 def _get_auth_status_dict(request: Request | None = None) -> dict:
     """Helper to build consistent auth status response body."""
     auth_enabled = is_auth_enabled()
-    logged_in = False
-    if auth_enabled and request:
+    current = _session_user(request) if auth_enabled and request else None
+    logged_in = current is not None
+    if not logged_in and auth_enabled and request:
         cookie_val = request.cookies.get(COOKIE_NAME)
         logged_in = verify_session(cookie_val) if cookie_val else False
 
@@ -173,12 +215,27 @@ def _get_auth_status_dict(request: Request | None = None) -> dict:
     else:
         setup_state = "no_password"
 
+    try:
+        from src.user_store import registration_enabled, user_count
+
+        multi_user = user_count() > 0
+        can_register = registration_enabled()
+    except Exception:
+        multi_user = False
+        can_register = True
+
+    password_set = _password_set_for_response(auth_enabled) or (auth_enabled and multi_user)
+
     return {
         "authEnabled": auth_enabled,
         "loggedIn": logged_in,
-        "passwordSet": _password_set_for_response(auth_enabled),
+        "passwordSet": password_set,
         "passwordChangeable": is_password_changeable() if auth_enabled else False,
         "setupState": setup_state,
+        "username": current.username if current else None,
+        "role": current.role if current else None,
+        "multiUser": True,
+        "registrationEnabled": can_register,
     }
 
 
@@ -360,6 +417,77 @@ async def auth_update_settings(request: Request, body: AuthSettingsRequest):
 
 
 @router.post(
+    "/register",
+    summary="Register a normal user",
+    description="Create a non-admin account and set a session cookie.",
+)
+async def auth_register(request: Request, body: RegisterRequest):
+    """Public registration for multi-user auth."""
+    if not is_auth_enabled():
+        return JSONResponse(
+            status_code=400,
+            content={"error": "auth_disabled", "message": "Authentication is not configured"},
+        )
+
+    from src.user_store import ROLE_USER, create_user, registration_enabled
+
+    if not registration_enabled():
+        return JSONResponse(
+            status_code=403,
+            content={"error": "registration_disabled", "message": "Registration is disabled"},
+        )
+
+    username = (body.username or "").strip()
+    password = (body.password or "").strip()
+    confirm = (body.password_confirm or "").strip()
+    if not username or not password:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_request", "message": "请输入用户名和密码"},
+        )
+    if password != confirm:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "password_mismatch", "message": "两次输入的密码不一致"},
+        )
+
+    ip = get_client_ip(request)
+    if not check_rate_limit(ip):
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "rate_limited",
+                "message": "Too many failed attempts. Please try again later.",
+            },
+        )
+
+    record, err = create_user(username, password, role=ROLE_USER)
+    if err:
+        status = 409 if err == "用户名已存在" else 400
+        record_login_failure(ip)
+        return JSONResponse(
+            status_code=status,
+            content={"error": "register_failed", "message": err},
+        )
+
+    clear_rate_limit(ip)
+    session_val = create_session(user_id=int(record.id))
+    if not session_val:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "message": "Failed to create session"},
+        )
+    content = _get_auth_status_dict(request)
+    content["loggedIn"] = True
+    content["username"] = record.username
+    content["role"] = record.role
+    content["ok"] = True
+    resp = JSONResponse(content=content)
+    _set_session_cookie(resp, session_val, request)
+    return resp
+
+
+@router.post(
     "/login",
     summary="Login or set initial password",
     description="Verify password and set session cookie. If password not set yet, accepts password+passwordConfirm.",
@@ -388,6 +516,28 @@ async def auth_login(request: Request, body: LoginRequest):
                 "message": "Too many failed attempts. Please try again later.",
             },
         )
+
+    username = (body.username or "").strip()
+    if username:
+        from src.user_store import authenticate_user
+
+        record = authenticate_user(username, password)
+        if record is None:
+            record_login_failure(ip)
+            return JSONResponse(
+                status_code=401,
+                content={"error": "invalid_password", "message": "用户名或密码错误"},
+            )
+        clear_rate_limit(ip)
+        session_val = create_session(user_id=int(record.id))
+        if not session_val:
+            return JSONResponse(
+                status_code=500,
+                content={"error": "internal_error", "message": "Failed to create session"},
+            )
+        resp = JSONResponse(content={"ok": True, "username": record.username, "role": record.role})
+        _set_session_cookie(resp, session_val, request)
+        return resp
 
     password_set = is_password_set()
 
@@ -433,7 +583,7 @@ async def auth_login(request: Request, body: LoginRequest):
     summary="Change password",
     description="Change password. Requires valid session.",
 )
-async def auth_change_password(body: ChangePasswordRequest):
+async def auth_change_password(body: ChangePasswordRequest, request: Request):
     """Change password. Requires login."""
     if not is_password_changeable():
         return JSONResponse(
@@ -456,7 +606,13 @@ async def auth_change_password(body: ChangePasswordRequest):
             content={"error": "password_mismatch", "message": "两次输入的新密码不一致"},
         )
 
-    err = change_password(current, new_pwd)
+    session_user = _session_user(request)
+    if session_user is not None and session_user.id > 0:
+        from src.user_store import change_user_password
+
+        err = change_user_password(session_user.id, current, new_pwd)
+    else:
+        err = change_password(current, new_pwd)
     if err:
         return JSONResponse(
             status_code=400,
@@ -472,11 +628,16 @@ async def auth_change_password(body: ChangePasswordRequest):
 )
 async def auth_logout(request: Request):
     """Clear session cookie."""
-    if is_auth_enabled() and not rotate_session_secret():
-        return JSONResponse(
-            status_code=500,
-            content={"error": "internal_error", "message": "Failed to invalidate session"},
-        )
+    cookie_val = request.cookies.get(COOKIE_NAME)
+    info = verify_session_info(cookie_val) if cookie_val else None
+    # Legacy single-admin sessions rotate the signing secret so the old cookie dies.
+    # Multi-user sessions only drop this client's cookie so other users stay logged in.
+    if is_auth_enabled() and (info is None or info.get("user_id") is None):
+        if not rotate_session_secret():
+            return JSONResponse(
+                status_code=500,
+                content={"error": "internal_error", "message": "Failed to invalidate session"},
+            )
     resp = Response(status_code=204)
     resp.delete_cookie(key=COOKIE_NAME, path="/")
     return resp

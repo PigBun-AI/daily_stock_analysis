@@ -15,6 +15,8 @@ This document explains how to deploy the AI Stock Analysis System to a server.
 
 ---
 
+This fork's root `docker-compose.yml` publishes **only host port 18473**. The Postgres user store uses the internal hostname `db`. If inter-container networking fails, use `docker-compose.sqlite.yml` to persist users under `/app/data` instead of removing `db` from the main file. See [multi-user auth](multi-user-auth.md).
+
 ## Option 1: Docker Compose Deployment (Recommended)
 
 ### 1. Install Docker

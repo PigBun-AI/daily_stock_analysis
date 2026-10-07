@@ -6,6 +6,10 @@ export type AuthStatusResponse = {
   passwordSet?: boolean;
   passwordChangeable?: boolean;
   setupState: 'enabled' | 'password_retained' | 'no_password';
+  username?: string | null;
+  role?: string | null;
+  multiUser?: boolean;
+  registrationEnabled?: boolean;
 };
 
 export const authApi = {
@@ -39,12 +43,23 @@ export const authApi = {
     return data;
   },
 
-  async login(password: string, passwordConfirm?: string): Promise<void> {
-    const body: { password: string; passwordConfirm?: string } = { password };
+  async login(password: string, passwordConfirm?: string, username?: string): Promise<void> {
+    const body: { password: string; passwordConfirm?: string; username?: string } = { password };
     if (passwordConfirm !== undefined) {
       body.passwordConfirm = passwordConfirm;
     }
+    if (username) {
+      body.username = username;
+    }
     await apiClient.post('/api/v1/auth/login', body);
+  },
+
+  async register(username: string, password: string, passwordConfirm: string): Promise<void> {
+    await apiClient.post('/api/v1/auth/register', {
+      username,
+      password,
+      passwordConfirm,
+    });
   },
 
   async changePassword(

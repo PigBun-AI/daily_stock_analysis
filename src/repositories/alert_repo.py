@@ -27,6 +27,9 @@ class AlertRepository:
         self.db = db_manager or DatabaseManager.get_instance()
 
     def create_rule(self, fields: Dict[str, Any]) -> AlertRuleRecord:
+        from src.identity import stamp_owner
+
+        stamp_owner(fields, key="user_id")
         with self.db.get_session() as session:
             row = AlertRuleRecord(**fields)
             session.add(row)
@@ -35,9 +38,15 @@ class AlertRepository:
             return row
 
     def get_rule(self, rule_id: int) -> Optional[AlertRuleRecord]:
+        from src.identity import isolation_owner_id
+
+        conditions = [AlertRuleRecord.id == rule_id]
+        owner = isolation_owner_id()
+        if owner is not None:
+            conditions.append(AlertRuleRecord.user_id == owner)
         with self.db.get_session() as session:
             return session.execute(
-                select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id).limit(1)
+                select(AlertRuleRecord).where(and_(*conditions)).limit(1)
             ).scalar_one_or_none()
 
     def update_rule(self, rule_id: int, fields: Dict[str, Any]) -> Optional[AlertRuleRecord]:
@@ -55,8 +64,14 @@ class AlertRepository:
             return row
 
     def delete_rule(self, rule_id: int) -> bool:
+        from src.identity import isolation_owner_id
+
+        conditions = [AlertRuleRecord.id == rule_id]
+        owner = isolation_owner_id()
+        if owner is not None:
+            conditions.append(AlertRuleRecord.user_id == owner)
         with self.db.get_session() as session:
-            result = session.execute(delete(AlertRuleRecord).where(AlertRuleRecord.id == rule_id))
+            result = session.execute(delete(AlertRuleRecord).where(and_(*conditions)))
             session.commit()
             return bool(result.rowcount)
 
@@ -71,7 +86,12 @@ class AlertRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> Tuple[List[AlertRuleRecord], int]:
+        from src.identity import isolation_owner_id
+
         conditions = []
+        owner = isolation_owner_id()
+        if owner is not None:
+            conditions.append(AlertRuleRecord.user_id == owner)
         if enabled is not None:
             conditions.append(AlertRuleRecord.enabled.is_(enabled))
         if alert_type:

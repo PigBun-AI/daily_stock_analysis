@@ -1,0 +1,46 @@
+# 多用户认证
+
+本 fork 将上游单管理员密码门禁扩展为多用户账号体系。分析能力与免费行情源保持不变。
+
+## 行为
+
+- `ADMIN_AUTH_ENABLED=true` 时保护 `/api/v1/*`。`/api/health`、`/api/v1/auth/login`、`/api/v1/auth/register`、`/api/v1/auth/status` 保持公开。
+- 会话写入 httpOnly Cookie `dsa_session`（`SameSite=lax`）。
+- 新用户密码使用 bcrypt；上游单管理员文件哈希（PBKDF2）仍可用于无用户名的兼容登录。
+- 首次启动若设置 `ADMIN_USERNAME` 与 `ADMIN_PASSWORD`，会创建管理员。其他账号通过 `/register` 注册为普通用户。
+- 登录后的自选股、分析历史、预警规则、投资组合按 `user_id` / `owner_id` 隔离。行情缓存仍全局共享。
+
+## 配置
+
+| 变量 | 说明 |
+|------|------|
+| `HOST_PORT` | Compose 发布到宿主机的唯一端口，默认 `18473` |
+| `SECRET_KEY` | 会话签名密钥；未设置时回退到 `data/.session_secret` |
+| `ADMIN_AUTH_ENABLED` | 是否强制登录 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 引导管理员 |
+| `AUTH_REGISTRATION_ENABLED` | 是否允许公开注册，默认 true |
+| `DATABASE_URL` | 用户库。Compose 内为 `postgresql+psycopg2://dsa:...@db:5432/dsa`；未设置时使用 `DATABASE_PATH` 对应的 SQLite |
+| `API_STARTUP_TIMEOUT_SECONDS` | FastAPI 启动探测超时，默认 `180`。容器冷启动慢时不要改回 3 秒 |
+
+## Docker
+
+```bash
+# 本地可直接启动（默认 admin / changeme）
+# 生产请先 cp .env.example .env 并设置 ADMIN_USERNAME / ADMIN_PASSWORD / SECRET_KEY
+docker compose up -d --build
+```
+
+浏览器访问 `http://localhost:18473`。仅该端口映射到宿主机。Postgres 使用内部主机名 `db`，不对外暴露。
+
+`ADMIN_AUTH_ENABLED` 优先读配置文件；镜像内没有 `.env` 时回退到进程 / Compose 环境变量。
+
+### SQLite 回退（容器间网络不通）
+
+默认保持 Postgres。若 Docker bridge ICC 异常（web 访问 `db` 超时，但宿主机访问容器正常），不要从主 compose 删除 `db` 服务，改用 SQLite overlay：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d --build
+# 或：DATABASE_URL= docker compose up -d --no-deps --build web
+```
+
+用户库写入 `app_data` volume（`/app/data`）。主 compose 仍保留 `db` 服务定义。

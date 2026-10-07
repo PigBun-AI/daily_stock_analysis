@@ -38,7 +38,7 @@ export const SettingsCategoryNav: React.FC<SettingsCategoryNavProps> = ({
       aria-label={t('settings.categoryNavTitle')}
     >
       <div className="hidden px-2 pb-3 pt-2 lg:block">
-        <p className="settings-accent-text text-xs font-semibold uppercase tracking-[0.24em]">{t('settings.categoryNavTitle')}</p>
+        <p className="settings-accent-text text-xs font-semibold">{t('settings.categoryNavTitle')}</p>
         <p className="mt-1 text-[11px] leading-relaxed text-muted-text">{t('settings.categoryNavDescription')}</p>
       </div>
 

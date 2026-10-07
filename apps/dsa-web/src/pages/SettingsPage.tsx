@@ -1434,7 +1434,7 @@ const SettingsPage: React.FC = () => {
                   className={`grid grid-cols-1 gap-3 ${shouldShowDesktopVersionCard ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}
                 >
                   <div className="rounded-2xl border settings-border bg-background/40 px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-text">
+                    <p className="text-xs font-medium text-muted-text">
                       {t('settings.versionWebui')}
                     </p>
                     <p className="mt-2 break-all font-mono text-sm text-foreground">
@@ -1442,7 +1442,7 @@ const SettingsPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="rounded-2xl border settings-border bg-background/40 px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-text">
+                    <p className="text-xs font-medium text-muted-text">
                       {t('settings.versionRevision')}
                     </p>
                     <p className="mt-2 break-all font-mono text-sm text-foreground">
@@ -1450,7 +1450,7 @@ const SettingsPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="rounded-2xl border settings-border bg-background/40 px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-text">
+                    <p className="text-xs font-medium text-muted-text">
                       {t('settings.versionBuildTime')}
                     </p>
                     <p className="mt-2 break-all font-mono text-sm text-foreground">
@@ -1459,7 +1459,7 @@ const SettingsPage: React.FC = () => {
                   </div>
                   {shouldShowDesktopVersionCard ? (
                     <div className="rounded-2xl border settings-border bg-background/40 px-4 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-text">
+                      <p className="text-xs font-medium text-muted-text">
                         {t('settings.versionDesktop')}
                       </p>
                       <p className="mt-2 break-all font-mono text-sm text-foreground">

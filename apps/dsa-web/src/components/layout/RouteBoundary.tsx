@@ -16,7 +16,7 @@ export const PageLoadingFallback: React.FC<PageLoadingFallbackProps> = ({ fullPa
         : 'flex min-h-[60vh] items-center justify-center'
     }
   >
-    <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan/20 border-t-cyan" />
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
   </div>
 );
 

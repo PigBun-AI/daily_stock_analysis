@@ -371,9 +371,11 @@ class AnalysisHistory(Base):
     take_profit = Column(Float)
 
     created_at = Column(DateTime, default=datetime.now, index=True)
+    user_id = Column(String(64), nullable=True, index=True)
 
     __table_args__ = (
         Index('ix_analysis_code_time', 'code', 'created_at'),
+        Index('ix_analysis_user_time', 'user_id', 'created_at'),
     )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -396,6 +398,7 @@ class AnalysisHistory(Base):
             'stop_loss': self.stop_loss,
             'take_profit': self.take_profit,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'user_id': self.user_id,
         }
 
 
@@ -949,9 +952,11 @@ class AlertRuleRecord(Base):
     notification_policy = Column(Text)
     created_at = Column(DateTime, default=datetime.now, index=True)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+    user_id = Column(String(64), nullable=True, index=True)
 
     __table_args__ = (
         Index('ix_alert_rule_type_target', 'alert_type', 'target'),
+        Index('ix_alert_rule_user', 'user_id'),
     )
 
 
@@ -1383,6 +1388,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             self._ensure_decision_signal_profile_schema()
             self._ensure_stock_daily_canonical_id()
             self._ensure_intelligence_item_scope_values()
+            self._ensure_user_isolation_columns()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
 
@@ -1428,6 +1434,25 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             raise
         finally:
             session.close()
+
+    def _ensure_user_isolation_columns(self) -> None:
+        """Add nullable user_id columns used for multi-user data isolation."""
+        if not self._is_sqlite_engine:
+            return
+        inspector = inspect(self._engine)
+        targets = (
+            (AnalysisHistory.__tablename__, "user_id"),
+            (AlertRuleRecord.__tablename__, "user_id"),
+        )
+        with self._engine.begin() as conn:
+            for table_name, column_name in targets:
+                if not inspector.has_table(table_name):
+                    continue
+                columns = {col["name"] for col in inspector.get_columns(table_name)}
+                if column_name in columns:
+                    continue
+                conn.execute(text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} VARCHAR(64)'))
+                logger.info("Added %s.%s for per-user isolation", table_name, column_name)
 
     def _ensure_decision_signal_profile_schema(self) -> None:
         """Add and backfill nullable decision_profile for existing SQLite DBs."""
@@ -2817,11 +2842,14 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
 
         try:
             def _write(session: Session) -> int:
+                from src.identity import isolation_owner_id
+
                 history = AnalysisHistory(
                     query_id=query_id,
                     code=result.code,
                     name=result.name,
                     report_type=report_type,
+                    user_id=isolation_owner_id(),
                     sentiment_score=result.sentiment_score,
                     operation_advice=result.operation_advice,
                     trend_prediction=result.trend_prediction,
@@ -3002,7 +3030,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         offset: int = 0,
-        limit: int = 20
+        limit: int = 20,
+        user_id: Optional[str] = None,
     ) -> Tuple[List[AnalysisHistory], int]:
         """
         分页查询分析历史记录（带总数）
@@ -3038,6 +3067,8 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             if end_date:
                 # created_at < end_date+1 00:00:00 (即 <= end_date 23:59:59)
                 conditions.append(AnalysisHistory.created_at < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
+            if user_id:
+                conditions.append(AnalysisHistory.user_id == user_id)
             
             # 构建 where 子句
             where_clause = and_(*conditions) if conditions else True
@@ -3096,9 +3127,15 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             return 0
 
         def _write(session: Session) -> int:
+            from src.identity import isolation_owner_id
+
+            conditions = [AnalysisHistory.id.in_(ids)]
+            owner = isolation_owner_id()
+            if owner is not None:
+                conditions.append(AnalysisHistory.user_id == owner)
             existing_ids = sorted(
                 session.execute(
-                    select(AnalysisHistory.id).where(AnalysisHistory.id.in_(ids))
+                    select(AnalysisHistory.id).where(and_(*conditions))
                 ).scalars().all()
             )
             if not existing_ids:

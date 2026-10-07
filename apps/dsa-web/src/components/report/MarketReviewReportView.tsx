@@ -619,7 +619,7 @@ export const MarketReviewReportView: React.FC<MarketReviewReportViewProps> = ({
                 {marketData.indices.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
-                      <thead className="text-left text-xs uppercase text-muted-text">
+                      <thead className="text-left text-xs font-medium text-muted-text">
                         <tr>
                           <th className="px-2 py-2">{marketReviewText.index}</th>
                           <th className="px-2 py-2">{marketReviewText.last}</th>

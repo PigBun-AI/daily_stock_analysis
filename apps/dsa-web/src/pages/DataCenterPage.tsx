@@ -96,7 +96,7 @@ const DataCenterPage: React.FC = () => {
 
   return (
     <AppPage className="space-y-5">
-      <PageHeader eyebrow="Data Center" title={t('dataCenter.title')} description={t('dataCenter.description')} />
+      <PageHeader eyebrow={t('dataCenter.eyebrow')} title={t('dataCenter.title')} description={t('dataCenter.description')} />
 
       <div className="flex justify-end gap-2">
         <Link
@@ -158,13 +158,13 @@ const DataCenterPage: React.FC = () => {
             </div>
           </Card>
 
-          <Card title={t('dataCenter.datasetQuality')} subtitle="Quality" variant="bordered" padding="md">
+          <Card title={t('dataCenter.datasetQuality')} subtitle={t('dataCenter.qualitySubtitle')} variant="bordered" padding="md">
             {overview.datasets.length === 0 ? (
               <EmptyState title={t('dataCenter.noDatasetQuality')} />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="border-b border-border/60 text-xs uppercase text-muted-text">
+                  <thead className="border-b border-border/60 text-xs font-medium text-muted-text">
                     <tr>
                       <th className="px-3 py-2 font-medium">{t('dataCenter.dataset')}</th>
                       <th className="px-3 py-2 font-medium">{t('dataCenter.status')}</th>
@@ -189,7 +189,7 @@ const DataCenterPage: React.FC = () => {
             )}
           </Card>
 
-          <Card title={t('dataCenter.priorities')} subtitle="Routing" variant="bordered" padding="md">
+          <Card title={t('dataCenter.priorities')} subtitle={t('dataCenter.routingSubtitle')} variant="bordered" padding="md">
             {overview.priorities.length === 0 ? (
               <EmptyState icon={<TriangleAlert className="h-6 w-6" />} title={t('dataCenter.noPriorities')} />
             ) : (

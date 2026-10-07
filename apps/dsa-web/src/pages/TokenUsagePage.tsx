@@ -83,11 +83,11 @@ const ModelUsageCard: React.FC<{ model: UsageModelBreakdown; language: UiLanguag
       </div>
       <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
         <div>
-          <p className="text-xs text-secondary-text">Prompt</p>
+          <p className="text-xs text-secondary-text">{t('usage.promptTokens')}</p>
           <p className="mt-1 font-medium text-foreground">{formatNumber(model.promptTokens, language)}</p>
         </div>
         <div>
-          <p className="text-xs text-secondary-text">Completion</p>
+          <p className="text-xs text-secondary-text">{t('usage.completionTokens')}</p>
           <p className="mt-1 font-medium text-foreground">{formatNumber(model.completionTokens, language)}</p>
         </div>
         <div>
@@ -101,6 +101,10 @@ const ModelUsageCard: React.FC<{ model: UsageModelBreakdown; language: UiLanguag
 
 const TokenUsagePage: React.FC = () => {
   const { language, t } = useUiLanguage();
+
+  useEffect(() => {
+    document.title = `${t('usage.title')} - DSA`;
+  }, [t]);
   const [period, setPeriod] = useState<UsagePeriod>('month');
   const [dashboard, setDashboard] = useState<UsageDashboard | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
@@ -256,7 +260,7 @@ const TokenUsagePage: React.FC = () => {
               <div className="overflow-hidden rounded-2xl border border-border/70 bg-card/75 shadow-soft-card">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-border/70 text-sm">
-                    <thead className="bg-surface-2/70 text-left text-xs uppercase tracking-[0.16em] text-secondary-text">
+                    <thead className="bg-surface-2/70 text-left text-xs text-secondary-text">
                       <tr>
                         <th className="px-4 py-3 font-medium">{t('usage.table.time')}</th>
                         <th className="px-4 py-3 font-medium">{t('usage.table.type')}</th>

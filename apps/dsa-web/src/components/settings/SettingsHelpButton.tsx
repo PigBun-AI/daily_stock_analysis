@@ -48,7 +48,7 @@ function HelpSection({
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-text">{title}</h3>
+      <h3 className="text-xs font-semibold text-muted-text">{title}</h3>
       {children}
     </section>
   );
@@ -218,11 +218,11 @@ export const SettingsHelpButton: React.FC<SettingsHelpButtonProps> = ({
                   'sm:max-w-2xl sm:rounded-2xl',
                 )}
               >
-                <div className="h-1 w-full bg-gradient-to-r from-cyan/80 via-primary/70 to-purple/70" />
+                <div className="h-1 w-full bg-gradient-to-r from-primary/80 via-primary/70 to-primary/50" />
                 <div className="flex items-start justify-between gap-4 border-b border-border/60 px-5 py-4">
                   <div className="min-w-0">
                     {showFieldKey ? (
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-text">
+                      <p className="text-[11px] font-semibold text-muted-text">
                         {fieldKey}
                       </p>
                     ) : null}

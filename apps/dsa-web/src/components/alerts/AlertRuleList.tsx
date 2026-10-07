@@ -171,7 +171,7 @@ export const AlertRuleList: React.FC<AlertRuleListProps> = ({
       ) : (
         <div className="min-h-0 flex-1 overflow-x-auto">
           <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="border-b border-border/60 text-xs uppercase text-muted-text">
+            <thead className="border-b border-border/60 text-xs font-medium text-muted-text">
               <tr>
                 <th className="px-3 py-2 font-medium">{text.rule}</th>
                 <th className="px-3 py-2 font-medium">{text.target}</th>

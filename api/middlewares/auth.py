@@ -12,12 +12,14 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.auth import COOKIE_NAME, is_auth_enabled, verify_session
+from src.auth import COOKIE_NAME, is_auth_enabled, verify_session_info
+from src.identity import CurrentUser, set_current_user
 
 logger = logging.getLogger(__name__)
 
 EXEMPT_PATHS = frozenset({
     "/api/v1/auth/login",
+    "/api/v1/auth/register",
     "/api/v1/auth/status",
     "/api/health",
     "/api/v1/health",
@@ -34,6 +36,43 @@ def _path_exempt(path: str) -> bool:
     return normalized in EXEMPT_PATHS
 
 
+def _bind_user_from_cookie(request: Request) -> bool:
+    """Attach request.state.user when the session cookie is valid."""
+    cookie_val = request.cookies.get(COOKIE_NAME)
+    info = verify_session_info(cookie_val) if cookie_val else None
+    if info is None:
+        set_current_user(None)
+        request.state.user = None
+        return False
+
+    user_id = info.get("user_id")
+    current = None
+    if user_id is not None:
+        try:
+            from src.user_store import get_user_by_id
+
+            record = get_user_by_id(int(user_id))
+        except Exception:
+            logger.exception("Failed to load user %s from session", user_id)
+            record = None
+        if record is not None:
+            current = CurrentUser(
+                id=int(record.id),
+                username=str(record.username),
+                role=str(record.role or "user"),
+            )
+        else:
+            set_current_user(None)
+            request.state.user = None
+            return False
+    else:
+        current = CurrentUser(id=0, username="admin", role="admin")
+
+    set_current_user(current)
+    request.state.user = current
+    return True
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Require valid session for /api/v1/* when auth is enabled."""
 
@@ -42,18 +81,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable,
     ):
+        set_current_user(None)
+        request.state.user = None
+
         if not is_auth_enabled():
             return await call_next(request)
 
         path = request.url.path
         if _path_exempt(path):
+            _bind_user_from_cookie(request)
             return await call_next(request)
 
         if not path.startswith("/api/v1/"):
             return await call_next(request)
 
-        cookie_val = request.cookies.get(COOKIE_NAME)
-        if not cookie_val or not verify_session(cookie_val):
+        if not _bind_user_from_cookie(request):
             return JSONResponse(
                 status_code=401,
                 content={

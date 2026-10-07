@@ -66,21 +66,35 @@ def _get_credential_path() -> Path:
     return _get_data_dir() / ".admin_password_hash"
 
 
+def _parse_auth_enabled_flag(value: object) -> bool:
+    return str(value or "").strip().lower() in ("true", "1", "yes")
+
+
 def _is_auth_enabled_from_env() -> bool:
-    """Read ADMIN_AUTH_ENABLED from .env file."""
+    """Read ADMIN_AUTH_ENABLED from .env when present, else process/Compose env.
+
+    Compose images do not bake a `.env` file. The process environment (for
+    example ``ADMIN_AUTH_ENABLED=true`` in docker-compose.yml) must still win
+    in that case. When a config file exists and defines the key, the file
+    remains the persisted source of truth for the settings toggle.
+    """
     _ensure_env_loaded()
     env_file = os.getenv("ENV_FILE")
     env_path = Path(env_file) if env_file else Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.exists():
-        return False
-    values = dotenv_values(env_path)
-    val = (values.get("ADMIN_AUTH_ENABLED") or "").strip().lower()
-    return val in ("true", "1", "yes")
+    if env_path.exists():
+        values = dotenv_values(env_path)
+        if "ADMIN_AUTH_ENABLED" in values:
+            return _parse_auth_enabled_flag(values.get("ADMIN_AUTH_ENABLED"))
+    return _parse_auth_enabled_flag(os.getenv("ADMIN_AUTH_ENABLED"))
 
 
 def rotate_session_secret() -> bool:
     """Rotate the session signing secret to invalidate all active sessions."""
     global _session_secret
+    if _secret_key_bytes() is not None:
+        # SECRET_KEY is the signing source; rotating the file would be a no-op.
+        logger.info("SECRET_KEY is set; skip file-based session secret rotation")
+        return True
     data_dir = _get_data_dir()
     secret_path = data_dir / ".session_secret"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -98,10 +112,23 @@ def rotate_session_secret() -> bool:
         return False
 
 
+def _secret_key_bytes() -> Optional[bytes]:
+    """Derive a 32-byte session key from SECRET_KEY when configured."""
+    secret_key = (os.getenv("SECRET_KEY") or "").strip()
+    if not secret_key:
+        return None
+    return hashlib.sha256(secret_key.encode("utf-8")).digest()
+
+
 def _load_session_secret() -> Optional[bytes]:
     """Load or create session secret."""
     global _session_secret
     if _session_secret is not None:
+        return _session_secret
+
+    from_env = _secret_key_bytes()
+    if from_env is not None:
+        _session_secret = from_env
         return _session_secret
 
     data_dir = _get_data_dir()
@@ -329,42 +356,63 @@ def change_password(current: str, new: str) -> Optional[str]:
         return "密码保存失败"
 
 
-def create_session() -> str:
-    """Create a signed session payload. Format: nonce.ts.signature."""
+def create_session(user_id: Optional[int] = None) -> str:
+    """Create a signed session payload.
+
+    Legacy (no user_id): nonce.ts.signature
+    Multi-user: user_id.nonce.ts.signature
+    """
     secret = _get_session_secret()
     if not secret:
         return ""
     nonce = secrets.token_urlsafe(32)
     ts = str(int(time.time()))
-    payload = f"{nonce}.{ts}"
+    if user_id is None:
+        payload = f"{nonce}.{ts}"
+    else:
+        payload = f"{int(user_id)}.{nonce}.{ts}"
     sig = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return f"{payload}.{sig}"
 
 
-def verify_session(value: str) -> bool:
-    """Verify session cookie and check expiry."""
+def verify_session_info(value: str) -> Optional[dict]:
+    """Verify session cookie and return ``{"user_id": int|None}`` or None."""
     secret = _get_session_secret()
     if not secret or not value:
-        return False
+        return None
     parts = value.split(".")
-    if len(parts) != 3:
-        return False
-    nonce, ts_str, sig = parts[0], parts[1], parts[2]
-    payload = f"{nonce}.{ts_str}"
+    user_id: Optional[int] = None
+    if len(parts) == 3:
+        nonce, ts_str, sig = parts[0], parts[1], parts[2]
+        payload = f"{nonce}.{ts_str}"
+    elif len(parts) == 4:
+        uid_str, nonce, ts_str, sig = parts[0], parts[1], parts[2], parts[3]
+        try:
+            user_id = int(uid_str)
+        except ValueError:
+            return None
+        payload = f"{uid_str}.{nonce}.{ts_str}"
+    else:
+        return None
     expected = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(sig, expected):
-        return False
+        return None
     try:
         ts = int(ts_str)
     except ValueError:
-        return False
+        return None
     try:
         max_age_hours = int(os.getenv("ADMIN_SESSION_MAX_AGE_HOURS", str(SESSION_MAX_AGE_HOURS_DEFAULT)))
     except ValueError:
         max_age_hours = SESSION_MAX_AGE_HOURS_DEFAULT
     if time.time() - ts > max_age_hours * 3600:
-        return False
-    return True
+        return None
+    return {"user_id": user_id}
+
+
+def verify_session(value: str) -> bool:
+    """Verify session cookie and check expiry."""
+    return verify_session_info(value) is not None
 
 
 def get_client_ip(request) -> str:

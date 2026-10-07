@@ -305,13 +305,16 @@ class HistoryService:
             offset = (page - 1) * limit
             
             # Use new paginated query method
+            from src.identity import isolation_owner_id
+
             records, total = self.db.get_analysis_history_paginated(
                 code=stock_code,
                 report_type=report_type,
                 start_date=start_dt,
                 end_date=end_dt,
                 offset=offset,
-                limit=limit
+                limit=limit,
+                user_id=isolation_owner_id(),
             )
             
             # Convert to response format
@@ -498,22 +501,30 @@ class HistoryService:
         Returns:
             AnalysisHistory object or None
         """
+        from src.identity import isolation_owner_id
+
+        def _visible(record):
+            owner = isolation_owner_id()
+            if owner is None or record is None:
+                return record
+            return record if getattr(record, "user_id", None) == owner else None
+
         try:
             int_id = int(record_id)
             record = self.db.get_analysis_history_by_id(int_id)
             if record:
-                return record
+                return _visible(record)
         except (ValueError, TypeError):
             pass
         # Fall back to query_id lookup. Keep the old no-kwargs call for
         # unfiltered paths so existing test doubles and integrations remain compatible.
         if code is None and report_type is None:
-            return self.db.get_latest_analysis_by_query_id(record_id)
-        return self.db.get_latest_analysis_by_query_id(
+            return _visible(self.db.get_latest_analysis_by_query_id(record_id))
+        return _visible(self.db.get_latest_analysis_by_query_id(
             record_id,
             code=code,
             report_type=report_type,
-        )
+        ))
 
     def resolve_and_get_detail(self, record_id: str) -> Optional[Dict[str, Any]]:
         """

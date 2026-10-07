@@ -1299,6 +1299,30 @@ def _run_analysis_with_runtime_scheduler_lock(
     return bool(lock_acquired and task_result["ok"])
 
 
+DEFAULT_API_STARTUP_TIMEOUT_SECONDS = 180.0
+
+
+def api_startup_timeout_seconds(
+    raw: Optional[str] = None,
+    default: float = DEFAULT_API_STARTUP_TIMEOUT_SECONDS,
+) -> float:
+    """Return the FastAPI startup-probe budget in seconds.
+
+    Container images import the full app tree before uvicorn reports
+    ``started``. A hard 3s window restarts the process on slow hosts.
+    """
+    value = (raw if raw is not None else os.getenv("API_STARTUP_TIMEOUT_SECONDS") or "").strip()
+    if not value:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError:
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
+
+
 def start_api_server(host: str, port: int, config: Config) -> None:
     """
     在后台线程启动 FastAPI 服务
@@ -1369,7 +1393,7 @@ def start_api_server(host: str, port: int, config: Config) -> None:
     thread = threading.Thread(target=run_server, daemon=True)
     thread.start()
 
-    timeout_seconds = 3.0
+    timeout_seconds = api_startup_timeout_seconds()
     wait_deadline = time.time() + timeout_seconds
     while time.time() < wait_deadline:
         if startup_error:

@@ -55,7 +55,15 @@ ALLOWED_MIME_STR = ", ".join(ALLOWED_MIME)
 
 
 def _read_watchlist_codes(service: SystemConfigService) -> list:
-    """Read STOCK_LIST codes as-is (no normalization)."""
+    """Read STOCK_LIST codes as-is (no normalization). Per-user when logged in."""
+    from src.identity import get_current_user
+
+    current = get_current_user()
+    if current is not None and current.id > 0:
+        from src.user_store import get_watchlist_codes
+
+        return get_watchlist_codes(current.id)
+
     config_data = service.get_config(include_schema=False)
     stock_list_str = ""
     for item in config_data.get("items", []):
@@ -67,6 +75,15 @@ def _read_watchlist_codes(service: SystemConfigService) -> list:
 
 def _write_watchlist_codes(service: SystemConfigService, codes: list) -> None:
     """Persist stock codes to STOCK_LIST as-is (no normalization)."""
+    from src.identity import get_current_user
+
+    current = get_current_user()
+    if current is not None and current.id > 0:
+        from src.user_store import set_watchlist_codes
+
+        set_watchlist_codes(current.id, codes)
+        return
+
     config_data = service.get_config(include_schema=False)
     config_version = config_data.get("config_version", "")
     service.update(

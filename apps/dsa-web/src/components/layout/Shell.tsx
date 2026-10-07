@@ -42,7 +42,7 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
-          className="pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-card/85 text-secondary-text shadow-soft-card backdrop-blur-md transition-colors hover:bg-hover hover:text-foreground lg:hidden"
+          className="pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-md border border-border/40 bg-card text-secondary-text transition-colors hover:bg-hover hover:text-foreground lg:hidden"
           aria-label={t('layout.openNav')}
         >
           <Menu className="h-5 w-5" />
@@ -56,12 +56,12 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
         </div>
       </div>
 
-      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1600px] px-6 py-8 sm:px-8 lg:px-10">
         <aside
           className={cn(
-            'sticky top-3 z-40 hidden shrink-0 flex-col overflow-visible rounded-[1.5rem] border border-[var(--shell-sidebar-border)] bg-card/72 p-2.5 shadow-soft-card backdrop-blur-sm transition-[width] duration-200 lg:flex',
-            'max-h-[calc(100vh-1.5rem)] self-start sm:top-4 sm:max-h-[calc(100vh-2rem)]',
-            collapsed ? 'w-[64px]' : 'w-[136px]'
+            'sticky top-8 z-40 hidden shrink-0 flex-col overflow-visible rounded-none border-r border-[var(--shell-sidebar-border)] bg-transparent py-2 pr-6 transition-[width] duration-200 lg:flex',
+            'max-h-[calc(100vh-4rem)] self-start',
+            collapsed ? 'w-[64px]' : 'w-[168px]'
           )}
           aria-label={t('layout.desktopSidebar')}
         >

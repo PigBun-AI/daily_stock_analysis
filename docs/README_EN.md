@@ -178,7 +178,14 @@ python main.py --schedule
 python main.py --serve-only
 ```
 
-> Docker deployment, scheduling, and cloud-server WebUI access are documented in the [Full Guide](./full-guide_EN.md).
+> Docker deployment, scheduling, and cloud-server WebUI access are documented in the [Full Guide](./full-guide_EN.md). This fork also ships a root `docker-compose.yml` that publishes **only host port 18473**, with a Swiss-style UI and multi-user login ([details](./multi-user-auth.md)).
+
+```bash
+docker compose up -d --build
+# http://localhost:18473
+# If Docker bridge ICC cannot reach Postgres: 
+# docker compose -f docker-compose.yml -f docker-compose.sqlite.yml up -d --build
+```
 
 ## 📱 Sample Output
 

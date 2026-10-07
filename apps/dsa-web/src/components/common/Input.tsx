@@ -88,14 +88,8 @@ export const Input = ({
     <button
       type="button"
       className={cn(
-        'inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-all duration-200 focus:outline-none focus:ring-2',
-        isLoginAppearance
-          ? visible
-            ? 'border-[var(--login-input-toggle-active-border)] bg-[var(--login-input-toggle-active-bg)] text-[var(--login-input-toggle-active-text)] shadow-[0_0_14px_var(--login-accent-glow)] focus:ring-[var(--login-input-toggle-ring)]'
-            : 'border-[var(--login-input-toggle-border)] bg-[var(--login-input-toggle-bg)] text-[var(--login-input-toggle-text)] hover:border-[var(--login-input-toggle-border-hover)] hover:bg-[var(--login-input-toggle-bg-hover)] hover:text-[var(--login-input-toggle-text-hover)] focus:ring-[var(--login-input-toggle-ring)]'
-          : visible
-            ? 'border-warning/40 bg-warning/15 text-warning shadow-[0_0_10px_hsla(var(--warning),0.15)]'
-            : 'border-border/40 bg-muted/20 text-muted-text hover:border-warning/40 hover:text-warning hover:shadow-[0_0_10px_hsla(var(--warning),0.15)] focus:ring-primary/30'
+        'inline-flex h-8 w-8 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30',
+        visible ? 'text-foreground' : 'hover:text-foreground'
       )}
       onClick={() => {
         const nextVisible = !visible;
@@ -139,7 +133,7 @@ export const Input = ({
           style={inputStyle}
           data-appearance={appearance}
           className={cn(
-            'input-surface input-focus-glow h-11 w-full rounded-xl border bg-transparent px-4 text-sm transition-all',
+            'input-surface input-focus-glow h-11 w-full rounded-md border bg-transparent px-4 text-sm transition-all',
             'focus:outline-none',
             isLoginAppearance ? 'input-appearance-login' : '',
             error ? 'border-danger/30' : '',

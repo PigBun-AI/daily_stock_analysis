@@ -74,6 +74,7 @@ class AuthApiTestCase(unittest.TestCase):
             url=SimpleNamespace(scheme="http"),
             cookies=cookies or {},
             client=SimpleNamespace(host="127.0.0.1"),
+            state=SimpleNamespace(),
         )
 
     def test_auth_status_when_password_not_set(self) -> None:
@@ -182,7 +183,8 @@ class AuthApiTestCase(unittest.TestCase):
                     currentPassword="oldpass6",
                     newPassword="newpass6",
                     newPasswordConfirm="newpass6",
-                )
+                ),
+                self._build_request(),
             )
         )
         self.assertIn(response.status_code, (200, 204))
@@ -202,10 +204,21 @@ class AuthApiTestCase(unittest.TestCase):
                     currentPassword="wrong",
                     newPassword="new123",
                     newPasswordConfirm="new123",
-                )
+                ),
+                self._build_request(),
             )
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_change_password_requires_fastapi_request(self) -> None:
+        import inspect
+
+        from fastapi import Request as FastAPIRequest
+
+        params = inspect.signature(auth_endpoint.auth_change_password).parameters
+        self.assertIn("request", params)
+        self.assertIs(params["request"].default, inspect.Parameter.empty)
+        self.assertIs(params["request"].annotation, FastAPIRequest)
 
     def test_protected_api_returns_401_without_session(self) -> None:
         scope = {

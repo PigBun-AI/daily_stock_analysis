@@ -1131,7 +1131,7 @@ const DecisionSignalsPage: React.FC = () => {
             </div>
             {reassessResponse?.warnings.length ? (
               <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-warning">{t('decisionSignals.reassessWarnings')}</p>
+                <p className="text-xs font-semibold text-warning">{t('decisionSignals.reassessWarnings')}</p>
                 <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-secondary-text">
                   {reassessResponse.warnings.map((warning, index) => (
                     <li key={`${warning.code}-${index}`}>{warning.message || warning.code}</li>
@@ -1158,7 +1158,7 @@ const DecisionSignalsPage: React.FC = () => {
         ) : null}
         {persistedItem && reassessResponse?.warnings.length ? (
           <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-warning">{t('decisionSignals.reassessWarnings')}</p>
+            <p className="text-xs font-semibold text-warning">{t('decisionSignals.reassessWarnings')}</p>
             <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-secondary-text">
               {reassessResponse.warnings.map((warning, index) => (
                 <li key={`${warning.code}-${index}`}>{warning.message || warning.code}</li>
@@ -1247,7 +1247,7 @@ const DecisionSignalsPage: React.FC = () => {
 
           {historyCandidatesLoaded && stockCandidates.length > 0 ? (
             <div className="mt-4">
-              <p className="text-xs font-medium uppercase text-muted-text">
+              <p className="text-xs font-medium text-muted-text">
                 {stockCandidateMode === 'history'
                   ? t('decisionSignals.stockContextRecent')
                   : t('decisionSignals.stockContextPopular')}
